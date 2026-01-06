@@ -1,6 +1,6 @@
 import React, { useState, useEffect } from 'react';
 
-export default function DocumentExplorer({ onDocumentSelect, selectedDocIds = [] }) {
+export default function DocumentExplorer({ onDocumentSelect, selectedDocIds = [], onDocumentView, viewedDocument }) {
     const [documents, setDocuments] = useState([]);
     const [isUploading, setIsUploading] = useState(false);
     const [uploadProgress, setUploadProgress] = useState('');
@@ -57,11 +57,11 @@ export default function DocumentExplorer({ onDocumentSelect, selectedDocIds = []
         }
     };
 
-    const handleDelete = async (docId) => {
+    const handleDelete = async (filePath) => {
         if (!confirm('Are you sure you want to delete this document?')) return;
 
         try {
-            const response = await fetch(`http://127.0.0.1:8000/api/documents/${docId}`, {
+            const response = await fetch(`http://127.0.0.1:8000/api/documents/${encodeURIComponent(filePath)}`, {
                 method: 'DELETE',
             });
 
@@ -76,11 +76,15 @@ export default function DocumentExplorer({ onDocumentSelect, selectedDocIds = []
         }
     };
 
-    const toggleDocumentSelection = (docId) => {
-        const newSelection = selectedDocIds.includes(docId)
-            ? selectedDocIds.filter(id => id !== docId)
-            : [...selectedDocIds, docId];
+    const toggleDocumentSelection = (filePath) => {
+        const newSelection = selectedDocIds.includes(filePath)
+            ? selectedDocIds.filter(id => id !== filePath)
+            : [...selectedDocIds, filePath];
         onDocumentSelect(newSelection);
+    };
+
+    const isDocumentViewed = (doc) => {
+        return viewedDocument && viewedDocument.file_path === doc.file_path;
     };
 
     return (
@@ -116,21 +120,24 @@ export default function DocumentExplorer({ onDocumentSelect, selectedDocIds = []
                 ) : (
                     documents.map((doc) => (
                         <div
-                            key={doc.doc_id}
-                            className={`group bg-gray-750 hover:bg-gray-700 border rounded-lg p-3 cursor-pointer transition-all ${selectedDocIds.includes(doc.doc_id)
+                            key={doc.file_path}
+                            className={`group bg-gray-750 hover:bg-gray-700 border rounded-lg p-3 cursor-pointer transition-all ${
+                                isDocumentViewed(doc)
+                                    ? 'border-blue-400 bg-blue-900/20'
+                                    : selectedDocIds.includes(doc.file_path)
                                     ? 'border-blue-500 bg-gray-700'
                                     : 'border-gray-700'
                                 }`}
-                            onClick={() => toggleDocumentSelection(doc.doc_id)}
+                            onClick={() => toggleDocumentSelection(doc.file_path)}
                         >
                             <div className="flex items-start gap-2">
                                 {/* Checkbox */}
                                 <div className="mt-0.5">
-                                    <div className={`w-4 h-4 rounded border-2 flex items-center justify-center ${selectedDocIds.includes(doc.doc_id)
+                                    <div className={`w-4 h-4 rounded border-2 flex items-center justify-center ${selectedDocIds.includes(doc.file_path)
                                             ? 'bg-blue-600 border-blue-600'
                                             : 'border-gray-600'
                                         }`}>
-                                        {selectedDocIds.includes(doc.doc_id) && (
+                                        {selectedDocIds.includes(doc.file_path) && (
                                             <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="currentColor" className="w-3 h-3 text-white">
                                                 <path fillRule="evenodd" d="M19.916 4.626a.75.75 0 01.208 1.04l-9 13.5a.75.75 0 01-1.154.114l-6-6a.75.75 0 011.06-1.06l5.353 5.353 8.493-12.739a.75.75 0 011.04-.208z" clipRule="evenodd" />
                                             </svg>
@@ -140,27 +147,51 @@ export default function DocumentExplorer({ onDocumentSelect, selectedDocIds = []
 
                                 {/* Document Info */}
                                 <div className="flex-1 min-w-0">
-                                    <div className="text-sm font-medium text-gray-200 truncate">
-                                        {doc.filename}
+                                    <div className="text-sm font-medium text-gray-200 truncate" title={doc.title}>
+                                        {doc.title || 'Untitled'}
                                     </div>
-                                    <div className="text-xs text-gray-500 mt-1">
-                                        {doc.page_count} page{doc.page_count !== 1 ? 's' : ''}
+                                    <div className="text-xs text-gray-500 mt-1 truncate" title={doc.file_path}>
+                                        {doc.file_path}
+                                    </div>
+                                    <div className="text-xs text-gray-400 mt-1 flex gap-3">
+                                        <span>{doc.total_pages} page{doc.total_pages !== 1 ? 's' : ''}</span>
+                                        {doc.cited_by_count !== undefined && (
+                                            <span>• {doc.cited_by_count} citations</span>
+                                        )}
                                     </div>
                                 </div>
 
-                                {/* Delete Button */}
-                                <button
-                                    onClick={(e) => {
-                                        e.stopPropagation();
-                                        handleDelete(doc.doc_id);
-                                    }}
-                                    className="opacity-0 group-hover:opacity-100 p-1 hover:bg-red-600/20 rounded transition-all"
-                                    title="Delete document"
-                                >
-                                    <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" strokeWidth={1.5} stroke="currentColor" className="w-4 h-4 text-red-400">
-                                        <path strokeLinecap="round" strokeLinejoin="round" d="M14.74 9l-.346 9m-4.788 0L9.26 9m9.968-3.21c.342.052.682.107 1.022.166m-1.022-.165L18.16 19.673a2.25 2.25 0 01-2.244 2.077H8.084a2.25 2.25 0 01-2.244-2.077L4.772 5.79m14.456 0a48.108 48.108 0 00-3.478-.397m-12 .562c.34-.059.68-.114 1.022-.165m0 0a48.11 48.11 0 013.478-.397m7.5 0v-.916c0-1.18-.91-2.164-2.09-2.201a51.964 51.964 0 00-3.32 0c-1.18.037-2.09 1.022-2.09 2.201v.916m7.5 0a48.667 48.667 0 00-7.5 0" />
-                                    </svg>
-                                </button>
+                                {/* Action Buttons */}
+                                <div className="flex items-center gap-1">
+                                    {/* View Button */}
+                                    <button
+                                        onClick={(e) => {
+                                            e.stopPropagation();
+                                            onDocumentView(doc);
+                                        }}
+                                        className="opacity-0 group-hover:opacity-100 p-1 hover:bg-blue-600/20 rounded transition-all"
+                                        title="View PDF"
+                                    >
+                                        <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" strokeWidth={1.5} stroke="currentColor" className="w-4 h-4 text-blue-400">
+                                            <path strokeLinecap="round" strokeLinejoin="round" d="M2.036 12.322a1.012 1.012 0 010-.639C3.423 7.51 7.36 4.5 12 4.5c4.638 0 8.573 3.007 9.963 7.178.07.207.07.431 0 .639C20.577 16.49 16.64 19.5 12 19.5c-4.638 0-8.573-3.007-9.963-7.178z" />
+                                            <path strokeLinecap="round" strokeLinejoin="round" d="M15 12a3 3 0 11-6 0 3 3 0 016 0z" />
+                                        </svg>
+                                    </button>
+
+                                    {/* Delete Button */}
+                                    <button
+                                        onClick={(e) => {
+                                            e.stopPropagation();
+                                            handleDelete(doc.file_path);
+                                        }}
+                                        className="opacity-0 group-hover:opacity-100 p-1 hover:bg-red-600/20 rounded transition-all"
+                                        title="Delete document"
+                                    >
+                                        <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" strokeWidth={1.5} stroke="currentColor" className="w-4 h-4 text-red-400">
+                                            <path strokeLinecap="round" strokeLinejoin="round" d="M14.74 9l-.346 9m-4.788 0L9.26 9m9.968-3.21c.342.052.682.107 1.022.166m-1.022-.165L18.16 19.673a2.25 2.25 0 01-2.244 2.077H8.084a2.25 2.25 0 01-2.244-2.077L4.772 5.79m14.456 0a48.108 48.108 0 00-3.478-.397m-12 .562c.34-.059.68-.114 1.022-.165m0 0a48.11 48.11 0 013.478-.397m7.5 0v-.916c0-1.18-.91-2.164-2.09-2.201a51.964 51.964 0 00-3.32 0c-1.18.037-2.09 1.022-2.09 2.201v.916m7.5 0a48.667 48.667 0 00-7.5 0" />
+                                        </svg>
+                                    </button>
+                                </div>
                             </div>
                         </div>
                     ))
@@ -170,8 +201,16 @@ export default function DocumentExplorer({ onDocumentSelect, selectedDocIds = []
             {/* Selected Count */}
             {selectedDocIds.length > 0 && (
                 <div className="p-3 border-t border-gray-700 bg-gray-800">
-                    <div className="text-xs text-gray-400 text-center">
-                        {selectedDocIds.length} document{selectedDocIds.length !== 1 ? 's' : ''} selected
+                    <div className="flex items-center justify-between gap-2">
+                        <div className="text-xs text-gray-400">
+                            {selectedDocIds.length} document{selectedDocIds.length !== 1 ? 's' : ''} selected
+                        </div>
+                        <button
+                            onClick={() => onDocumentSelect([])}
+                            className="text-xs text-blue-400 hover:text-blue-300 font-medium transition-colors"
+                        >
+                            Unselect All
+                        </button>
                     </div>
                 </div>
             )}

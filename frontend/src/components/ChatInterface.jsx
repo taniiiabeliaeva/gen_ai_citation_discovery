@@ -24,15 +24,15 @@ export default function ChatInterface({ selectedDocIds = [], selectedText = '' }
 
         // Add document context if documents are selected
         if (selectedDocIds.length > 0) {
-            userMessage = `[Context: Asking about ${selectedDocIds.length} selected document(s)]\n${userMessage}`;
+            userMessage = `[Path of requested documents: ${selectedDocIds.join(', ')}]\n${userMessage}`;
         }
+
+        console.log(userMessage);
+        console.log(selectedDocIds);
 
         setInput('');
         setMessages(prev => [...prev, { role: 'user', content: userMessage }]);
         setIsLoading(true);
-
-        // Create a placeholder for the agent's response
-        setMessages(prev => [...prev, { role: 'agent', content: '' }]);
 
         try {
             // Generate a session ID (simple random string for now)
@@ -52,6 +52,7 @@ export default function ChatInterface({ selectedDocIds = [], selectedText = '' }
             const reader = response.body.getReader();
             const decoder = new TextDecoder();
             let agentResponse = '';
+            let hasAddedMessage = false;
 
             while (true) {
                 const { value, done } = await reader.read();
@@ -67,15 +68,32 @@ export default function ChatInterface({ selectedDocIds = [], selectedText = '' }
                             break;
                         } else if (data.startsWith('[ERROR]')) {
                             console.error(data);
-                            agentResponse += "\n\n*An error occurred during processing.*";
-                        } else {
-                            agentResponse += data;
-                            // Update the last message (agent's response) with the new content
-                            setMessages(prev => {
-                                const newMessages = [...prev];
-                                newMessages[newMessages.length - 1] = { role: 'agent', content: agentResponse };
-                                return newMessages;
-                            });
+                            agentResponse = "*An error occurred during processing.*";
+                            if (!hasAddedMessage) {
+                                setMessages(prev => [...prev, { role: 'agent', content: agentResponse }]);
+                                hasAddedMessage = true;
+                            } else {
+                                setMessages(prev => {
+                                    const newMessages = [...prev];
+                                    newMessages[newMessages.length - 1] = { role: 'agent', content: agentResponse };
+                                    return newMessages;
+                                });
+                            }
+                        } else if (data) {
+                            // Replace the entire response (backend sends full content)
+                            agentResponse = data;
+                            
+                            // Add message on first content, update on subsequent chunks
+                            if (!hasAddedMessage) {
+                                setMessages(prev => [...prev, { role: 'agent', content: agentResponse }]);
+                                hasAddedMessage = true;
+                            } else {
+                                setMessages(prev => {
+                                    const newMessages = [...prev];
+                                    newMessages[newMessages.length - 1] = { role: 'agent', content: agentResponse };
+                                    return newMessages;
+                                });
+                            }
                         }
                     }
                 }
@@ -83,11 +101,7 @@ export default function ChatInterface({ selectedDocIds = [], selectedText = '' }
 
         } catch (error) {
             console.error('Error fetching chat:', error);
-            setMessages(prev => {
-                const newMessages = [...prev];
-                newMessages[newMessages.length - 1] = { role: 'agent', content: "Sorry, I couldn't connect to the server. Please check if the backend is running." };
-                return newMessages;
-            });
+            setMessages(prev => [...prev, { role: 'agent', content: "Sorry, I couldn't connect to the server. Please check if the backend is running." }]);
         } finally {
             setIsLoading(false);
         }
