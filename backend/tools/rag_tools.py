@@ -171,6 +171,71 @@ def answer_general_question(user_query: str) -> str:
     return f"{answer}\n\n--- SOURCES USED ---\n{source_list}"
 
 
+@tool
+def recommend_relevant_papers(topic: str, num_papers: int = 10) -> str:
+    """
+    Recommends papers relevant to a specific research topic using semantic search.
+    Returns a ranked list of papers with relevance scores.
+
+    Use this tool when:
+    - User asks "Which papers are relevant for X?"
+    - User wants to discover papers on a specific topic
+    - User needs paper recommendations for their research
+
+    Args:
+        topic: The research topic or query (e.g., "hardware security vulnerabilities", "Spectre attacks")
+        num_papers: Number of papers to recommend (default: 10)
+
+    Returns:
+        JSON string with ranked papers and relevance scores
+    """
+    print(f"\n[RECOMMEND TOOL] Searching for papers on topic: {topic}")
+    print(f"[RECOMMEND TOOL] Requesting top {num_papers} papers")
+
+    # Use similarity search to find relevant documents
+    retriever = VECTOR_STORE.as_retriever(search_kwargs={"k": num_papers})
+
+    # Perform search
+    relevant_docs = retriever.invoke(topic)
+
+    if not relevant_docs:
+        return "No papers found matching the topic. Please try a different query or upload more documents."
+
+    print(f"[RECOMMEND TOOL] Found {len(relevant_docs)} relevant documents")
+
+    # Extract unique papers with scores
+    papers_dict = {}
+    for doc in relevant_docs:
+        file_path = doc.metadata.get("source") or doc.metadata.get("file_path")
+        title = doc.metadata.get("title", "Untitled")
+
+        # Calculate relevance score (normalized similarity)
+        # Note: FAISS returns documents in order of relevance
+        # We'll assign scores based on position (first = highest)
+        if file_path not in papers_dict:
+            position = len(papers_dict)
+            # Score from 1.0 (first) to 0.5 (last)
+            score = 1.0 - (position / (num_papers * 2))
+            papers_dict[file_path] = {
+                "title": title,
+                "file_path": file_path,
+                "relevance_score": round(score, 2),
+            }
+
+    # Convert to list and sort by score
+    papers_list = list(papers_dict.values())
+    papers_list.sort(key=lambda x: x["relevance_score"], reverse=True)
+
+    # Format response
+    import json
+
+    result = {"topic": topic, "num_results": len(papers_list), "papers": papers_list}
+
+    print(f"[RECOMMEND TOOL] Returning {len(papers_list)} unique papers")
+    return json.dumps(result, indent=2)
+
+
 ALL_RAG_TOOLS.append(query_paper_for_answer)
 ALL_RAG_TOOLS.append(generate_research_ideas)
 ALL_RAG_TOOLS.append(answer_general_question)
+ALL_RAG_TOOLS.append(recommend_relevant_papers)

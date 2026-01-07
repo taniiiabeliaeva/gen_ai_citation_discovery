@@ -1,6 +1,6 @@
 import React, { useState, useRef, useEffect } from 'react';
 
-export default function ChatInterface({ selectedDocIds = [], selectedText = '' }) {
+export default function ChatInterface({ selectedDocIds = [], selectedText = '', onRelevanceUpdate, documents = [] }) {
     const [messages, setMessages] = useState([
         { role: 'agent', content: 'Hello! I am your research assistant. Ask me about academic papers, and I can help you find citations and generate research ideas.' }
     ]);
@@ -16,22 +16,29 @@ export default function ChatInterface({ selectedDocIds = [], selectedText = '' }
         scrollToBottom();
     }, [messages]);
 
+
     const handleSubmit = async (e) => {
         e.preventDefault();
         if (!input.trim() || isLoading) return;
 
         let userMessage = input.trim();
+        let displayMessage = userMessage; // What the user sees in the chat bubble
 
         // Add document context if documents are selected
         if (selectedDocIds.length > 0) {
             userMessage = `[Path of requested documents: ${selectedDocIds.join(', ')}]\n${userMessage}`;
+            // displayMessage stays as the user's original input
         }
 
         console.log(userMessage);
         console.log(selectedDocIds);
 
         setInput('');
-        setMessages(prev => [...prev, { role: 'user', content: userMessage }]);
+        setMessages(prev => [...prev, { 
+            role: 'user', 
+            content: displayMessage,
+            selectedDocs: selectedDocIds.length > 0 ? selectedDocIds : null
+        }]);
         setIsLoading(true);
 
         try {
@@ -53,6 +60,7 @@ export default function ChatInterface({ selectedDocIds = [], selectedText = '' }
             const decoder = new TextDecoder();
             let agentResponse = '';
             let hasAddedMessage = false;
+            let currentEvent = 'message'; // Track current SSE event type
 
             while (true) {
                 const { value, done } = await reader.read();
@@ -62,37 +70,62 @@ export default function ChatInterface({ selectedDocIds = [], selectedText = '' }
                 const lines = chunk.split('\n');
 
                 for (const line of lines) {
-                    if (line.startsWith('data: ')) {
+                    // Parse SSE event type
+                    if (line.startsWith('event: ')) {
+                        currentEvent = line.slice(7).trim();
+                        console.log(`[CHAT] Received SSE event type: ${currentEvent}`);
+                    } else if (line.startsWith('data: ')) {
                         const data = line.slice(6);
-                        if (data === '[DONE]') {
-                            break;
-                        } else if (data.startsWith('[ERROR]')) {
-                            console.error(data);
-                            agentResponse = "*An error occurred during processing.*";
-                            if (!hasAddedMessage) {
-                                setMessages(prev => [...prev, { role: 'agent', content: agentResponse }]);
-                                hasAddedMessage = true;
-                            } else {
-                                setMessages(prev => {
-                                    const newMessages = [...prev];
-                                    newMessages[newMessages.length - 1] = { role: 'agent', content: agentResponse };
-                                    return newMessages;
-                                });
+                        
+                        // Handle metadata events
+                        if (currentEvent === 'metadata') {
+                            try {
+                                const metadata = JSON.parse(data);
+                                console.log('[CHAT] Received metadata event:', metadata);
+                                
+                                if (metadata.recommendations && metadata.recommendations.scores) {
+                                    console.log('[CHAT] Triggering automatic document reordering');
+                                    if (onRelevanceUpdate) {
+                                        onRelevanceUpdate(metadata.recommendations.scores, true);
+                                    }
+                                }
+                            } catch (e) {
+                                console.error('[CHAT] Failed to parse metadata:', e);
                             }
-                        } else if (data) {
-                            // Replace the entire response (backend sends full content)
-                            agentResponse = data;
-                            
-                            // Add message on first content, update on subsequent chunks
-                            if (!hasAddedMessage) {
-                                setMessages(prev => [...prev, { role: 'agent', content: agentResponse }]);
-                                hasAddedMessage = true;
-                            } else {
-                                setMessages(prev => {
-                                    const newMessages = [...prev];
-                                    newMessages[newMessages.length - 1] = { role: 'agent', content: agentResponse };
-                                    return newMessages;
-                                });
+                            // Reset to default event type
+                            currentEvent = 'message';
+                        } else {
+                            // Handle regular message events
+                            if (data === '[DONE]') {
+                                break;
+                            } else if (data.startsWith('[ERROR]')) {
+                                console.error(data);
+                                agentResponse = "*An error occurred during processing.*";
+                                if (!hasAddedMessage) {
+                                    setMessages(prev => [...prev, { role: 'agent', content: agentResponse }]);
+                                    hasAddedMessage = true;
+                                } else {
+                                    setMessages(prev => {
+                                        const newMessages = [...prev];
+                                        newMessages[newMessages.length - 1] = { role: 'agent', content: agentResponse };
+                                        return newMessages;
+                                    });
+                                }
+                            } else if (data) {
+                                // Replace the entire response (backend sends full content)
+                                agentResponse = data;
+                                
+                                // Add message on first content, update on subsequent chunks
+                                if (!hasAddedMessage) {
+                                    setMessages(prev => [...prev, { role: 'agent', content: agentResponse }]);
+                                    hasAddedMessage = true;
+                                } else {
+                                    setMessages(prev => {
+                                        const newMessages = [...prev];
+                                        newMessages[newMessages.length - 1] = { role: 'agent', content: agentResponse };
+                                        return newMessages;
+                                    });
+                                }
                             }
                         }
                     }
@@ -111,36 +144,52 @@ export default function ChatInterface({ selectedDocIds = [], selectedText = '' }
         <div className="flex flex-col h-screen bg-gray-900 text-gray-100 font-sans">
             {/* Header */}
             <header className="bg-gray-800 border-b border-gray-700 p-4 shadow-md">
-                <div className="max-w-4xl mx-auto flex items-center gap-3">
-                    <div className="w-8 h-8 rounded-full bg-gradient-to-br from-blue-500 to-purple-600 flex items-center justify-center">
-                        <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" strokeWidth={1.5} stroke="currentColor" className="w-5 h-5 text-white">
-                            <path strokeLinecap="round" strokeLinejoin="round" d="M12 6.042A8.967 8.967 0 006 3.75c-1.052 0-2.062.18-3 .512v14.25A8.987 8.987 0 016 18c2.305 0 4.408.867 6 2.292m0-14.25a8.966 8.966 0 016-2.292c1.052 0 2.062.18 3 .512v14.25A8.987 8.987 0 0018 18a8.967 8.967 0 00-6 2.292m0-14.25v14.25" />
-                        </svg>
+                <div className="max-w-4xl mx-auto">
+                    <div className="flex items-center gap-3">
+                        <div className="w-8 h-8 rounded-full bg-gradient-to-br from-blue-500 to-purple-600 flex items-center justify-center">
+                            <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" strokeWidth={1.5} stroke="currentColor" className="w-5 h-5 text-white">
+                                <path strokeLinecap="round" strokeLinejoin="round" d="M12 6.042A8.967 8.967 0 006 3.75c-1.052 0-2.062.18-3 .512v14.25A8.987 8.987 0 016 18c2.305 0 4.408.867 6 2.292m0-14.25a8.966 8.966 0 016-2.292c1.052 0 2.062.18 3 .512v14.25A8.987 8.987 0 0018 18a8.967 8.967 0 00-6 2.292m0-14.25v14.25" />
+                            </svg>
+                        </div>
+                        <h1 className="text-xl font-semibold tracking-tight">Gen AI Citation Discovery</h1>
                     </div>
-                    <h1 className="text-xl font-semibold tracking-tight">Gen AI Citation Discovery</h1>
                 </div>
             </header>
 
             {/* Chat Area */}
             <main className="flex-1 overflow-y-auto p-4 space-y-6 scroll-smooth">
                 <div className="max-w-3xl mx-auto space-y-6">
-                    {messages.map((msg, index) => (
-                        <div
-                            key={index}
-                            className={`flex ${msg.role === 'user' ? 'justify-end' : 'justify-start'}`}
-                        >
+                    {messages.map((msg, index) => {
+                        // Helper function to get paper title from file path
+                        const getPaperTitle = (filePath) => {
+                            const doc = documents.find(d => d.file_path === filePath);
+                            return doc ? doc.title : filePath;
+                        };
+
+                        return (
                             <div
-                                className={`max-w-[80%] rounded-2xl px-5 py-3.5 shadow-sm ${msg.role === 'user'
-                                    ? 'bg-blue-600 text-white rounded-br-none'
-                                    : 'bg-gray-800 border border-gray-700 text-gray-200 rounded-bl-none'
-                                    }`}
+                                key={index}
+                                className={`flex ${msg.role === 'user' ? 'justify-end' : 'justify-start'}`}
                             >
-                                <div className="whitespace-pre-wrap leading-relaxed text-[0.95rem]">
-                                    {msg.content}
+                                <div
+                                    className={`max-w-[80%] rounded-2xl px-5 py-3.5 shadow-sm ${msg.role === 'user'
+                                        ? 'bg-blue-600 text-white rounded-br-none'
+                                        : 'bg-gray-800 border border-gray-700 text-gray-200 rounded-bl-none'
+                                        }`}
+                                >
+                                    {/* Show selected papers if any */}
+                                    {msg.selectedDocs && msg.selectedDocs.length > 0 && (
+                                        <div className="text-xs opacity-70 mb-2 pb-2 border-b border-white/20">
+                                            📄 {msg.selectedDocs.map(getPaperTitle).join(', ')}
+                                        </div>
+                                    )}
+                                    <div className="whitespace-pre-wrap leading-relaxed text-[0.95rem]">
+                                        {msg.content}
+                                    </div>
                                 </div>
                             </div>
-                        </div>
-                    ))}
+                        );
+                    })}
                     {isLoading && (
                         <div className="flex justify-start">
                             <div className="bg-gray-800 border border-gray-700 rounded-2xl rounded-bl-none px-5 py-4 shadow-sm">

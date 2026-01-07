@@ -2,7 +2,7 @@
 from fastapi import FastAPI, HTTPException, UploadFile, File
 from fastapi.responses import StreamingResponse, JSONResponse, FileResponse
 from fastapi.middleware.cors import CORSMiddleware
-from langchain_core.messages import HumanMessage, AIMessage
+from langchain_core.messages import HumanMessage, AIMessage, ToolMessage
 from dotenv import load_dotenv
 import os
 import shutil
@@ -71,6 +71,7 @@ async def chat_stream(session_id: str, prompt: str):
         # This function runs synchronously but yields control to FastAPI
         final_answer = ""
         chunk_count = 0
+        tool_metadata = {}  # Track tool calls and their results
 
         try:
             print(f"\n[STREAMING] Starting agent stream for session: {session_id}")
@@ -92,6 +93,45 @@ async def chat_stream(session_id: str, prompt: str):
                         for message in (
                             messages if isinstance(messages, list) else [messages]
                         ):
+                            # Detect tool calls and results
+                            if isinstance(message, ToolMessage):
+                                # Check if this is from recommend_relevant_papers
+                                try:
+                                    import json
+
+                                    tool_result = json.loads(message.content)
+                                    if (
+                                        "topic" in tool_result
+                                        and "papers" in tool_result
+                                    ):
+                                        print(
+                                            f"[STREAMING] Detected recommendation tool result"
+                                        )
+                                        # Extract scores for metadata
+                                        scores = {}
+                                        for paper in tool_result.get("papers", []):
+                                            if (
+                                                "file_path" in paper
+                                                and "relevance_score" in paper
+                                            ):
+                                                scores[paper["file_path"]] = paper[
+                                                    "relevance_score"
+                                                ]
+
+                                        tool_metadata["recommendations"] = {
+                                            "topic": tool_result.get("topic"),
+                                            "scores": scores,
+                                            "num_results": tool_result.get(
+                                                "num_results", len(scores)
+                                            ),
+                                        }
+                                        print(
+                                            f"[STREAMING] Stored metadata for {len(scores)} papers"
+                                        )
+                                except (json.JSONDecodeError, Exception) as e:
+                                    # Not a JSON tool result or not recommendation data
+                                    pass
+
                             if isinstance(message, AIMessage):
                                 content = message.content
 
@@ -116,6 +156,14 @@ async def chat_stream(session_id: str, prompt: str):
                                     # Yield the data as Server-Sent Event (SSE)
                                     yield f"data: {content}\n\n"
                                     final_answer = content  # Keep the latest answer
+
+            # Send metadata event if we detected recommendation tool usage
+            if tool_metadata.get("recommendations"):
+                import json
+
+                print(f"[STREAMING] Sending metadata event with recommendations")
+                metadata_json = json.dumps(tool_metadata)
+                yield f"event: metadata\ndata: {metadata_json}\n\n"
 
             # Send the final DONE signal
             print(f"[STREAMING] Stream complete - sending [DONE] signal")

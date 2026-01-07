@@ -8,6 +8,9 @@ function App() {
   const [selectedText, setSelectedText] = useState('');
   const [viewedDocument, setViewedDocument] = useState(null);
   const [isPdfViewerVisible, setIsPdfViewerVisible] = useState(false);
+  const [relevanceScores, setRelevanceScores] = useState({});
+  const [sortBy, setSortBy] = useState('name');
+  const [documents, setDocuments] = useState([]);
 
   const handleDocumentView = (document) => {
     setViewedDocument(document);
@@ -19,6 +22,13 @@ function App() {
     setViewedDocument(null);
   };
 
+  const handleRelevanceUpdate = (scores, autoSort = false) => {
+    setRelevanceScores(scores);
+    if (autoSort) {
+      setSortBy('relevance');
+    }
+  };
+
   return (
     <div className="flex h-screen w-full bg-gray-900">
       {/* Document Explorer Sidebar */}
@@ -27,6 +37,10 @@ function App() {
         selectedDocIds={selectedDocIds}
         onDocumentView={handleDocumentView}
         viewedDocument={viewedDocument}
+        relevanceScores={relevanceScores}
+        sortBy={sortBy}
+        onSortChange={setSortBy}
+        onDocumentsChange={setDocuments}
       />
 
       {/* PDF Viewer (conditionally rendered) */}
@@ -69,6 +83,8 @@ function App() {
         <ChatInterface
           selectedDocIds={selectedDocIds}
           selectedText={selectedText}
+          onRelevanceUpdate={handleRelevanceUpdate}
+          documents={documents}
         />
       </div>
     </div>
