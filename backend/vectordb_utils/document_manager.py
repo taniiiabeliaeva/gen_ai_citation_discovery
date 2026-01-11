@@ -29,7 +29,41 @@ class DocumentManager:
             index_to_docstore_id={},
         )
 
+        self._indexed_file_paths = set()
         self.load_index()
+        self._rebuild_indexed_file_paths_cache()
+
+    def _canonicalize_file_path(self, file_path: Optional[str]) -> str:
+        if not file_path:
+            return ""
+
+        candidate = str(file_path).strip().replace("\\", "/")
+
+        if candidate.startswith("./data/"):
+            candidate = candidate[len("./data/") :]
+        elif candidate.startswith("data/"):
+            candidate = candidate[len("data/") :]
+
+        if os.path.isabs(candidate):
+            resolved_abs = os.path.abspath(candidate)
+            data_dir_abs = os.path.abspath(self.DATA_DIR)
+            try:
+                if os.path.commonpath([resolved_abs, data_dir_abs]) == data_dir_abs:
+                    candidate = os.path.relpath(resolved_abs, data_dir_abs)
+            except ValueError:
+                pass
+
+        return candidate.replace("\\", "/")
+
+    def _rebuild_indexed_file_paths_cache(self) -> None:
+        docstore = self.vector_store.docstore
+        all_docs: List[Document] = list(docstore._dict.values())
+        indexed = set()
+        for doc in all_docs:
+            fp = self._canonicalize_file_path(doc.metadata.get("file_path", ""))
+            if fp:
+                indexed.add(fp)
+        self._indexed_file_paths = indexed
 
     def process_and_index_pdf(self, file_path: str = None, metadata: Dict = None):
         """
@@ -51,6 +85,7 @@ class DocumentManager:
 
         if file_path:
             indexed_files: List[str] = []
+            skipped_files: List[str] = []
             pdfs_paths = [path.strip() for path in file_path.split(";") if path.strip()]
             for pdf_path in pdfs_paths:
                 normalized_input_path = os.path.normpath(pdf_path)
@@ -76,14 +111,37 @@ class DocumentManager:
                 except Exception as e:
                     raise Exception(f"Failed to load PDF: {str(e)}")
 
-                effective_file_path = (
-                    resolved_path if os.path.isabs(normalized_input_path) else normalized_input_path
-                )
+                resolved_abs = os.path.abspath(resolved_path)
+                data_dir_abs = os.path.abspath(self.DATA_DIR)
+
+                effective_file_path: str
+                try:
+                    if os.path.commonpath([resolved_abs, data_dir_abs]) == data_dir_abs:
+                        effective_file_path = os.path.relpath(resolved_abs, data_dir_abs)
+                    else:
+                        effective_file_path = (
+                            resolved_abs
+                            if os.path.isabs(normalized_input_path)
+                            else normalized_input_path
+                        )
+                except ValueError:
+                    effective_file_path = (
+                        resolved_abs
+                        if os.path.isabs(normalized_input_path)
+                        else normalized_input_path
+                    )
+
+                effective_file_path = self._canonicalize_file_path(effective_file_path)
+
+                if effective_file_path in self._indexed_file_paths:
+                    skipped_files.append(effective_file_path)
+                    continue
+
                 base_metadata = dict(metadata)
                 base_metadata.setdefault(
                     "title", os.path.splitext(os.path.basename(effective_file_path))[0]
                 )
-                base_metadata.setdefault("file_path", effective_file_path)
+                base_metadata["file_path"] = effective_file_path
                 base_metadata.setdefault("total_pages", len(docs))
 
                 for doc in docs:
@@ -99,8 +157,13 @@ class DocumentManager:
                 self.vector_store.add_documents(chunks)
 
                 indexed_files.append(effective_file_path)
+                self._indexed_file_paths.add(effective_file_path)
 
-            return {"indexed": indexed_files, "count": len(indexed_files)}
+            return {
+                "indexed": indexed_files,
+                "skipped": skipped_files,
+                "count": len(indexed_files),
+            }
 
         else:
             doc = Document(
@@ -127,17 +190,19 @@ class DocumentManager:
         # 2. Extract the list of Document objects from the docstore
         # The ._dict attribute of InMemoryDocstore is the underlying dictionary
         all_docs: List[Document] = list(docstore._dict.values())
-        all_pdf_docs = [
-            doc for doc in all_docs if doc.metadata.get("file_path", "") != ""
-        ]
+        all_pdf_docs = [doc for doc in all_docs if doc.metadata.get("file_path", "") != ""]
 
         # 3. Format the documents into a list of dictionaries
         results = dict()
         for doc in all_pdf_docs:
-            if doc.metadata.get("file_path") not in results:
-                results[doc.metadata.get("file_path")] = {
+            file_path = self._canonicalize_file_path(doc.metadata.get("file_path", ""))
+            if not file_path:
+                continue
+
+            if file_path not in results:
+                results[file_path] = {
                     "title": doc.metadata.get("title", ""),
-                    "file_path": doc.metadata.get("file_path", ""),
+                    "file_path": file_path,
                     "total_pages": doc.metadata.get("total_pages", ""),
                     "cited_by_count": doc.metadata.get("cited_by_count", ""),
                 }
@@ -228,6 +293,7 @@ class DocumentManager:
                 index_path, self.embeddings, allow_dangerous_deserialization=True
             )
             print(f"FAISS index loaded successfully from {index_path}")
+            self._rebuild_indexed_file_paths_cache()
             return True
         except Exception as e:
             print(f"Error loading FAISS index: {e}")

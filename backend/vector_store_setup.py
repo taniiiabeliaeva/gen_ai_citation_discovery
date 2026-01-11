@@ -3,12 +3,19 @@ import pandas as pd
 from tqdm import tqdm
 from dotenv import load_dotenv
 from argparse import ArgumentParser
+import shutil
 from vectordb_utils.document_manager import DocumentManager
 
 
 def parse_args():
     parser = ArgumentParser()
     parser.add_argument("--test", action="store_true", default=False)
+    parser.add_argument(
+        "--reset",
+        action="store_true",
+        default=False,
+        help="Delete the existing vector store directory before indexing.",
+    )
     return parser.parse_args()
 
 
@@ -21,6 +28,11 @@ load_dotenv()
 
 def setup_environment_and_create_vector_store(test=False):
     """Creates FAISS vector store from CSV file of papers and PDFs."""
+
+    if not os.path.exists(CSV_FILE_PATH):
+        raise FileNotFoundError(
+            f"CSV file not found at {CSV_FILE_PATH}. Please run setup scripts first."
+        )
 
     document_manager = DocumentManager(google_api_key=os.getenv("GOOGLE_API_KEY"))
     df = pd.read_csv(CSV_FILE_PATH)
@@ -45,4 +57,7 @@ def setup_environment_and_create_vector_store(test=False):
 
 if __name__ == "__main__":
     args = parse_args()
+    if args.reset and os.path.exists(VECTOR_DB_DIR):
+        shutil.rmtree(VECTOR_DB_DIR)
+
     setup_environment_and_create_vector_store(test=args.test)

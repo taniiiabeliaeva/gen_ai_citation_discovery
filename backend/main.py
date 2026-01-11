@@ -210,7 +210,11 @@ async def upload_document(file: UploadFile = File(...)):
 
         print(f"[UPLOAD] Document indexed successfully: {result}")
 
-        return JSONResponse(content=result, status_code=201)
+        status_code = 201
+        if result.get("count", 0) == 0 and result.get("skipped"):
+            status_code = 200
+
+        return JSONResponse(content=result, status_code=status_code)
     except Exception as e:
         print(f"[UPLOAD ERROR] Failed to upload document: {str(e)}")
         raise HTTPException(status_code=500, detail=str(e))
