@@ -209,36 +209,55 @@ class DocumentManager:
 
         return list(results.values())
 
-    def delete_document(self, doc_id: str) -> bool:
+    def delete_document(self, file_path: str) -> bool:
         """
-        Delete a document from the vector store.
-
-        Args:
-            doc_id: Document ID to delete
-
-        Returns:
-            True if successful, False otherwise
+        Delete all chunks belonging to a given PDF (by file_path) from the FAISS store,
+        then rebuild the index.
         """
         try:
-            collection = self.vector_store._collection
+            target = self._canonicalize_file_path(file_path)
+            
+            # Also try with pdfs prefix for matching
+            target_with_prefix = self._canonicalize_file_path(f"pdfs/{file_path}")
+            
+            if not target:
+                return False
 
-            # Get all IDs with matching doc_id
-            results = collection.get(where={"doc_id": doc_id})
+            # 1) Keep only docs NOT matching target
+            docstore = self.vector_store.docstore
+            old_ids = list(docstore._dict.keys())
 
-            if results and "ids" in results and results["ids"]:
-                collection.delete(ids=results["ids"])
+            kept_texts = []
+            kept_metas = []
+            removed_any = False
 
-                # Also delete the file if it exists
-                docs = self.list_documents()
-                for doc in docs:
-                    if doc["doc_id"] == doc_id and os.path.exists(doc["source"]):
-                        os.remove(doc["source"])
-                        break
+            for _id in old_ids:
+                doc = docstore._dict[_id]
+                fp = self._canonicalize_file_path(doc.metadata.get("file_path", ""))
+                if fp == target or fp == target_with_prefix:
+                    removed_any = True
+                else:
+                    kept_texts.append(doc.page_content)
+                    kept_metas.append(doc.metadata)
 
-                return True
-            return False
+            if not removed_any:
+                return False
+
+            # 2) Rebuild FAISS from kept docs
+            # (this regenerates embeddings; simplest + consistent)
+            new_store = FAISS.from_texts(
+                texts=kept_texts,
+                embedding=self.embeddings,
+                metadatas=kept_metas,
+            )
+
+            self.vector_store = new_store
+            self._rebuild_indexed_file_paths_cache()
+            return True
         except Exception as e:
             print(f"Error deleting document: {e}")
+            import traceback
+            traceback.print_exc()
             return False
 
     def _generate_doc_id(self) -> str:

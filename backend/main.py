@@ -294,17 +294,20 @@ def get_documents():
         raise HTTPException(status_code=500, detail=str(e))
 
 
-@app.delete("/api/documents/{doc_id}")
-def remove_document(doc_id: str):
-    """Delete a document from the vector store."""
-    print(f"\n[API REQUEST] DELETE /api/documents/{doc_id}")
+@app.delete("/api/documents/pdfs/{file_path:path}")
+def remove_document(file_path: str):
+    """Delete a document from vector store."""
+    print(f"\n[API REQUEST] DELETE /api/documents/pdfs/{file_path}")
     try:
-        success = document_manager.delete_document(doc_id)
+        # Don't resolve file path here - pass it directly to delete_document
+        # which will handle the path matching internally
+        success = document_manager.delete_document(file_path)
         if success:
-            print(f"[API RESPONSE] Document {doc_id} deleted successfully")
+            document_manager.save_index()
+            print(f"[API RESPONSE] Document {file_path} deleted successfully")
             return JSONResponse(content={"message": "Document deleted successfully"})
         else:
-            print(f"[API ERROR] Document {doc_id} not found")
+            print(f"[API ERROR] Document {file_path} not found")
             raise HTTPException(status_code=404, detail="Document not found")
     except Exception as e:
         print(f"[API ERROR] Failed to delete document: {str(e)}")
