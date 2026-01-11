@@ -11,7 +11,7 @@ import uvicorn
 # Import your compiled LangGraph components and tools
 from core.agent import create_research_langgraph
 from tools.openalex_tools import ALL_OPENALEX_TOOLS
-from tools.rag_tools import ALL_RAG_TOOLS
+from tools.rag_tools import ALL_RAG_TOOLS, set_document_manager
 from vectordb_utils.document_manager import DocumentManager
 
 # --- CONFIGURATION ---
@@ -46,6 +46,15 @@ except Exception as e:
     AGENT_APP = None
 
 document_manager = DocumentManager(GOOGLE_API_KEY)
+set_document_manager(document_manager)
+
+CHAT_HISTORY = {}
+MAX_HISTORY_MESSAGES = 20
+
+
+def _format_sse_data(data: str) -> str:
+    lines = data.splitlines() or [""]
+    return "".join([f"data: {line}\n" for line in lines]) + "\n"
 
 
 @app.get("/health")
@@ -64,7 +73,8 @@ async def chat_stream(session_id: str, prompt: str):
     if not AGENT_APP:
         raise HTTPException(status_code=503, detail="Agent is not initialized.")
 
-    inputs = {"messages": [HumanMessage(content=prompt)]}
+    history = CHAT_HISTORY.get(session_id, [])
+    inputs = {"messages": [*history, HumanMessage(content=prompt)]}
     config = {"configurable": {"thread_id": session_id}}
 
     async def event_generator():
@@ -72,6 +82,8 @@ async def chat_stream(session_id: str, prompt: str):
         final_answer = ""
         chunk_count = 0
         tool_metadata = {}  # Track tool calls and their results
+        rag_sources_text = None
+        recommended_papers_text = None
 
         try:
             print(f"\n[STREAMING] Starting agent stream for session: {session_id}")
@@ -95,6 +107,14 @@ async def chat_stream(session_id: str, prompt: str):
                         ):
                             # Detect tool calls and results
                             if isinstance(message, ToolMessage):
+                                if (
+                                    isinstance(message.content, str)
+                                    and "--- SOURCES USED ---" in message.content
+                                ):
+                                    rag_sources_text = message.content.split(
+                                        "--- SOURCES USED ---", 1
+                                    )[1].strip()
+
                                 # Check if this is from recommend_relevant_papers
                                 try:
                                     import json
@@ -107,6 +127,20 @@ async def chat_stream(session_id: str, prompt: str):
                                         print(
                                             f"[STREAMING] Detected recommendation tool result"
                                         )
+                                        papers = tool_result.get("papers", [])
+                                        lines = []
+                                        for i, paper in enumerate(papers, 1):
+                                            title = paper.get("title", "Untitled")
+                                            file_path = paper.get("file_path", "")
+                                            score = paper.get("relevance_score", "")
+                                            score_text = (
+                                                f" (score: {score})" if score != "" else ""
+                                            )
+                                            lines.append(
+                                                f"{i}. {title} — {file_path}{score_text}"
+                                            )
+                                        recommended_papers_text = "\n".join(lines)
+
                                         # Extract scores for metadata
                                         scores = {}
                                         for paper in tool_result.get("papers", []):
@@ -146,6 +180,24 @@ async def chat_stream(session_id: str, prompt: str):
 
                                 # Only send non-empty content
                                 if content and isinstance(content, str):
+                                    if (
+                                        rag_sources_text
+                                        and "--- SOURCES USED ---" not in content
+                                    ):
+                                        content = (
+                                            f"{content}\n\n--- SOURCES USED ---\n{rag_sources_text}"
+                                        )
+                                        rag_sources_text = None
+
+                                    if (
+                                        recommended_papers_text
+                                        and "--- RECOMMENDED PAPERS ---" not in content
+                                    ):
+                                        content = (
+                                            f"{content}\n\n--- RECOMMENDED PAPERS ---\n{recommended_papers_text}"
+                                        )
+                                        recommended_papers_text = None
+
                                     print(
                                         f"[STREAMING] Sending content to client (length: {len(content)} chars)"
                                     )
@@ -154,7 +206,7 @@ async def chat_stream(session_id: str, prompt: str):
                                     )
 
                                     # Yield the data as Server-Sent Event (SSE)
-                                    yield f"data: {content}\n\n"
+                                    yield _format_sse_data(content)
                                     final_answer = content  # Keep the latest answer
 
             # Send metadata event if we detected recommendation tool usage
@@ -163,13 +215,19 @@ async def chat_stream(session_id: str, prompt: str):
 
                 print(f"[STREAMING] Sending metadata event with recommendations")
                 metadata_json = json.dumps(tool_metadata)
-                yield f"event: metadata\ndata: {metadata_json}\n\n"
+                yield f"event: metadata\n{_format_sse_data(metadata_json)}"
 
             # Send the final DONE signal
             print(f"[STREAMING] Stream complete - sending [DONE] signal")
             print(
                 f"######################################################################\n"
             )
+
+            updated_history = [*history, HumanMessage(content=prompt)]
+            if final_answer:
+                updated_history.append(AIMessage(content=final_answer))
+
+            CHAT_HISTORY[session_id] = updated_history[-MAX_HISTORY_MESSAGES:]
             yield "data: [DONE]\n\n"
 
         except Exception as e:
@@ -207,6 +265,9 @@ async def upload_document(file: UploadFile = File(...)):
         result = document_manager.process_and_index_pdf(
             relative_path, None
         )  # TODO add metadata
+
+        if result.get("count", 0) > 0:
+            document_manager.save_index()
 
         print(f"[UPLOAD] Document indexed successfully: {result}")
 

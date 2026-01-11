@@ -7,6 +7,7 @@ export default function ChatInterface({ selectedDocIds = [], selectedText = '', 
     const [input, setInput] = useState('');
     const [isLoading, setIsLoading] = useState(false);
     const messagesEndRef = useRef(null);
+    const sessionIdRef = useRef(Math.random().toString(36).substring(7));
 
     const scrollToBottom = () => {
         messagesEndRef.current?.scrollIntoView({ behavior: "smooth" });
@@ -42,10 +43,7 @@ export default function ChatInterface({ selectedDocIds = [], selectedText = '', 
         setIsLoading(true);
 
         try {
-            // Generate a session ID (simple random string for now)
-            const sessionId = Math.random().toString(36).substring(7);
-
-            const response = await fetch(`http://127.0.0.1:8000/api/chat/${sessionId}?prompt=${encodeURIComponent(userMessage)}`, {
+            const response = await fetch(`http://127.0.0.1:8000/api/chat/${sessionIdRef.current}?prompt=${encodeURIComponent(userMessage)}`, {
                 method: 'POST',
                 headers: {
                     'Accept': 'text/event-stream',
@@ -61,6 +59,64 @@ export default function ChatInterface({ selectedDocIds = [], selectedText = '', 
             let agentResponse = '';
             let hasAddedMessage = false;
             let currentEvent = 'message'; // Track current SSE event type
+            let eventDataLines = [];
+
+            const processEvent = (eventType, dataLines) => {
+                const data = dataLines.join('\n');
+                if (!data) return;
+
+                // Handle metadata events
+                if (eventType === 'metadata') {
+                    try {
+                        const metadata = JSON.parse(data);
+                        console.log('[CHAT] Received metadata event:', metadata);
+
+                        if (metadata.recommendations && metadata.recommendations.scores) {
+                            console.log('[CHAT] Triggering automatic document reordering');
+                            if (onRelevanceUpdate) {
+                                onRelevanceUpdate(metadata.recommendations.scores, true);
+                            }
+                        }
+                    } catch (e) {
+                        console.error('[CHAT] Failed to parse metadata:', e);
+                    }
+                    return;
+                }
+
+                // Handle regular message events
+                if (data === '[DONE]') {
+                    return;
+                } else if (data.startsWith('[ERROR]')) {
+                    console.error(data);
+                    const errorText = "*An error occurred during processing.*";
+                    agentResponse = errorText;
+                    if (!hasAddedMessage) {
+                        setMessages(prev => [...prev, { role: 'agent', content: agentResponse }]);
+                        hasAddedMessage = true;
+                    } else {
+                        setMessages(prev => {
+                            const newMessages = [...prev];
+                            newMessages[newMessages.length - 1] = { role: 'agent', content: agentResponse };
+                            return newMessages;
+                        });
+                    }
+                } else {
+                    // Replace the entire response (backend sends full content)
+                    agentResponse = data;
+
+                    // Add message on first content, update on subsequent chunks
+                    if (!hasAddedMessage) {
+                        setMessages(prev => [...prev, { role: 'agent', content: agentResponse }]);
+                        hasAddedMessage = true;
+                    } else {
+                        setMessages(prev => {
+                            const newMessages = [...prev];
+                            newMessages[newMessages.length - 1] = { role: 'agent', content: agentResponse };
+                            return newMessages;
+                        });
+                    }
+                }
+            };
 
             while (true) {
                 const { value, done } = await reader.read();
@@ -70,64 +126,20 @@ export default function ChatInterface({ selectedDocIds = [], selectedText = '', 
                 const lines = chunk.split('\n');
 
                 for (const line of lines) {
-                    // Parse SSE event type
+                    if (line === '') {
+                        if (eventDataLines.length > 0) {
+                            processEvent(currentEvent, eventDataLines);
+                        }
+                        currentEvent = 'message';
+                        eventDataLines = [];
+                        continue;
+                    }
+
                     if (line.startsWith('event: ')) {
                         currentEvent = line.slice(7).trim();
                         console.log(`[CHAT] Received SSE event type: ${currentEvent}`);
                     } else if (line.startsWith('data: ')) {
-                        const data = line.slice(6);
-
-                        // Handle metadata events
-                        if (currentEvent === 'metadata') {
-                            try {
-                                const metadata = JSON.parse(data);
-                                console.log('[CHAT] Received metadata event:', metadata);
-
-                                if (metadata.recommendations && metadata.recommendations.scores) {
-                                    console.log('[CHAT] Triggering automatic document reordering');
-                                    if (onRelevanceUpdate) {
-                                        onRelevanceUpdate(metadata.recommendations.scores, true);
-                                    }
-                                }
-                            } catch (e) {
-                                console.error('[CHAT] Failed to parse metadata:', e);
-                            }
-                            // Reset to default event type
-                            currentEvent = 'message';
-                        } else {
-                            // Handle regular message events
-                            if (data === '[DONE]') {
-                                break;
-                            } else if (data.startsWith('[ERROR]')) {
-                                console.error(data);
-                                agentResponse = "*An error occurred during processing.*";
-                                if (!hasAddedMessage) {
-                                    setMessages(prev => [...prev, { role: 'agent', content: agentResponse }]);
-                                    hasAddedMessage = true;
-                                } else {
-                                    setMessages(prev => {
-                                        const newMessages = [...prev];
-                                        newMessages[newMessages.length - 1] = { role: 'agent', content: agentResponse };
-                                        return newMessages;
-                                    });
-                                }
-                            } else if (data) {
-                                // Replace the entire response (backend sends full content)
-                                agentResponse = data;
-
-                                // Add message on first content, update on subsequent chunks
-                                if (!hasAddedMessage) {
-                                    setMessages(prev => [...prev, { role: 'agent', content: agentResponse }]);
-                                    hasAddedMessage = true;
-                                } else {
-                                    setMessages(prev => {
-                                        const newMessages = [...prev];
-                                        newMessages[newMessages.length - 1] = { role: 'agent', content: agentResponse };
-                                        return newMessages;
-                                    });
-                                }
-                            }
-                        }
+                        eventDataLines.push(line.slice(6));
                     }
                 }
             }

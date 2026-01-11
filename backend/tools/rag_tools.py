@@ -9,7 +9,27 @@ import os
 
 load_dotenv()
 GOOGLE_API_KEY = os.getenv("GOOGLE_API_KEY")
-VECTOR_STORE = DocumentManager(GOOGLE_API_KEY).vector_store
+
+_DOCUMENT_MANAGER: DocumentManager = None
+
+
+def set_document_manager(document_manager: DocumentManager) -> None:
+    global _DOCUMENT_MANAGER
+    _DOCUMENT_MANAGER = document_manager
+
+
+def _get_vector_store():
+    global _DOCUMENT_MANAGER
+    if _DOCUMENT_MANAGER is None:
+        _DOCUMENT_MANAGER = DocumentManager(GOOGLE_API_KEY)
+    return _DOCUMENT_MANAGER.vector_store
+
+
+def _canonicalize_file_path(file_path: str) -> str:
+    global _DOCUMENT_MANAGER
+    if _DOCUMENT_MANAGER is None:
+        _DOCUMENT_MANAGER = DocumentManager(GOOGLE_API_KEY)
+    return _DOCUMENT_MANAGER._canonicalize_file_path(file_path)
 
 # --- RAG Tool List ---
 ALL_RAG_TOOLS = []
@@ -21,13 +41,14 @@ def query_paper_for_answer(user_query: str, paper_file_path: str) -> str:
     Analyzes the content of a specific local paper to answer a question or provide
     a detailed summary using RAG. Returns the answer and explicitly cites the source PDF.
     """
-    retriever = VECTOR_STORE.as_retriever(
-        search_kwargs={"k": 3, "filter": {"file_path": paper_file_path}}
+    canonical_path = _canonicalize_file_path(paper_file_path)
+    retriever = _get_vector_store().as_retriever(
+        search_kwargs={"k": 3, "filter": {"file_path": canonical_path}}
     )
     relevant_docs = retriever.invoke(user_query)
 
     if not relevant_docs:
-        return f"Could not find relevant text chunks for the paper: {paper_file_path}."
+        return f"Could not find relevant text chunks for the paper: {paper_file_path} (canonical: {canonical_path})."
 
     # 1. Collect unique source metadata from retrieved chunks
     source_metadata = set()
@@ -68,15 +89,16 @@ def generate_research_ideas(paper_file_path: str, num_ideas: int = 3) -> str:
         A list of generated research ideas.
     """
     # 1. Retrieve sections relevant to limitations and future work
-    retriever = VECTOR_STORE.as_retriever(
-        search_kwargs={"k": 5, "filter": {"file_path": paper_file_path}}
+    canonical_path = _canonicalize_file_path(paper_file_path)
+    retriever = _get_vector_store().as_retriever(
+        search_kwargs={"k": 5, "filter": {"file_path": canonical_path}}
     )
     # Search specifically for limitations/future work
-    retrieval_query = f"What are the limitations, gaps, and suggested future work for the paper {paper_title_keywords}?"
+    retrieval_query = f"What are the limitations, gaps, and suggested future work for the paper {canonical_path}?"
     relevant_docs = retriever.invoke(retrieval_query)
 
     if not relevant_docs:
-        return f"Could not retrieve enough context on limitations/future work for {paper_title_keywords} to generate ideas."
+        return f"Could not retrieve enough context on limitations/future work for {canonical_path} to generate ideas."
 
     context = "\n---\n".join([doc.page_content for doc in relevant_docs])
 
@@ -122,7 +144,7 @@ def answer_general_question(user_query: str) -> str:
     print(f"\n[RAG TOOL] Searching all documents for: {user_query}")
 
     # Retrieve the top 5 most relevant chunks across ALL documents (no filter)
-    retriever = VECTOR_STORE.as_retriever(
+    retriever = _get_vector_store().as_retriever(
         search_kwargs={"k": 5}  # No filter = search all documents
     )
     relevant_docs = retriever.invoke(user_query)
@@ -193,7 +215,7 @@ def recommend_relevant_papers(topic: str, num_papers: int = 10) -> str:
     print(f"[RECOMMEND TOOL] Requesting top {num_papers} papers")
 
     # Use similarity search to find relevant documents
-    retriever = VECTOR_STORE.as_retriever(search_kwargs={"k": num_papers})
+    retriever = _get_vector_store().as_retriever(search_kwargs={"k": num_papers})
 
     # Perform search
     relevant_docs = retriever.invoke(topic)
