@@ -34,8 +34,8 @@ export default function ChatInterface({ selectedDocIds = [], selectedText = '', 
         console.log(selectedDocIds);
 
         setInput('');
-        setMessages(prev => [...prev, { 
-            role: 'user', 
+        setMessages(prev => [...prev, {
+            role: 'user',
             content: displayMessage,
             selectedDocs: selectedDocIds.length > 0 ? selectedDocIds : null
         }]);
@@ -76,13 +76,13 @@ export default function ChatInterface({ selectedDocIds = [], selectedText = '', 
                         console.log(`[CHAT] Received SSE event type: ${currentEvent}`);
                     } else if (line.startsWith('data: ')) {
                         const data = line.slice(6);
-                        
+
                         // Handle metadata events
                         if (currentEvent === 'metadata') {
                             try {
                                 const metadata = JSON.parse(data);
                                 console.log('[CHAT] Received metadata event:', metadata);
-                                
+
                                 if (metadata.recommendations && metadata.recommendations.scores) {
                                     console.log('[CHAT] Triggering automatic document reordering');
                                     if (onRelevanceUpdate) {
@@ -114,7 +114,7 @@ export default function ChatInterface({ selectedDocIds = [], selectedText = '', 
                             } else if (data) {
                                 // Replace the entire response (backend sends full content)
                                 agentResponse = data;
-                                
+
                                 // Add message on first content, update on subsequent chunks
                                 if (!hasAddedMessage) {
                                     setMessages(prev => [...prev, { role: 'agent', content: agentResponse }]);
@@ -138,6 +138,22 @@ export default function ChatInterface({ selectedDocIds = [], selectedText = '', 
         } finally {
             setIsLoading(false);
         }
+    };
+
+    const handleShiftPlusEnter = (e) => {
+        if (e.key === 'Enter') {
+            if (e.shiftKey) {
+                // Allow newline on Shift + Enter
+                setInput((prev) => prev + '\n');
+            } else {
+                // Submit the form on Enter
+                handleSubmit(e);
+            }
+        }
+    };
+
+    const handleInputChange = (e) => {
+        setInput(e.target.value);
     };
 
     return (
@@ -219,18 +235,37 @@ export default function ChatInterface({ selectedDocIds = [], selectedText = '', 
                     )}
 
                     <form onSubmit={handleSubmit} className="relative">
-                        <input
-                            type="text"
+                        <textarea
                             value={input}
-                            onChange={(e) => setInput(e.target.value)}
+                            onChange={handleInputChange}
+                            onKeyDown={handleShiftPlusEnter}
                             placeholder="Ask a research question..."
-                            className="w-full bg-gray-800 text-white border border-gray-700 rounded-xl pl-5 pr-14 py-3.5 focus:outline-none focus:ring-2 focus:ring-blue-500/50 focus:border-blue-500 transition-all placeholder-gray-500"
+                            className="w-full bg-gray-800 text-white border border-gray-700 rounded-xl pl-5 pr-18 py-3.5 focus:outline-none focus:ring-2 focus:ring-blue-500/50 focus:border-blue-500 transition-all placeholder-gray-500 resize-none"
                             disabled={isLoading}
+                            rows="1"
+                            style={{
+                                overflow: 'auto',
+                            }}
+                            onInput={(e) => {
+                                e.target.style.height = 'auto';
+                                e.target.style.height = Math.min(e.target.scrollHeight, 200) + 'px';
+
+                                // Watch for programmatic clear (e.g. on submit) and reset height immediately
+                                if (!e.target._resetHeightWatcher) {
+                                    e.target._resetHeightWatcher = setInterval(() => {
+                                        if (e.target.value === '') {
+                                            e.target.style.height = 'auto';
+                                            clearInterval(e.target._resetHeightWatcher);
+                                            e.target._resetHeightWatcher = null;
+                                        }
+                                    }, 50);
+                                }
+                            }}
                         />
                         <button
                             type="submit"
                             disabled={!input.trim() || isLoading}
-                            className="absolute right-2 top-1/2 -translate-y-1/2 p-2 bg-blue-600 hover:bg-blue-500 text-white rounded-lg disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
+                            className="absolute right-2 top-2 p-2 bg-blue-600 hover:bg-blue-500 text-white rounded-lg disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
                         >
                             <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="currentColor" className="w-5 h-5">
                                 <path d="M3.478 2.405a.75.75 0 00-.926.94l2.432 7.905H13.5a.75.75 0 010 1.5H4.984l-2.432 7.905a.75.75 0 00.926.94 60.519 60.519 0 0018.445-8.986.75.75 0 000-1.218A60.517 60.517 0 003.478 2.405z" />
@@ -245,3 +280,4 @@ export default function ChatInterface({ selectedDocIds = [], selectedText = '', 
         </div>
     );
 }
+
