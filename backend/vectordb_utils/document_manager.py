@@ -3,7 +3,7 @@ import os
 import faiss
 import uuid
 import pandas as pd
-from typing import List, Dict
+from typing import List, Dict, Optional
 from langchain_community.document_loaders import PyMuPDFLoader
 from langchain_text_splitters import RecursiveCharacterTextSplitter
 from langchain_google_genai import GoogleGenerativeAIEmbeddings
@@ -47,18 +47,47 @@ class DocumentManager:
         if not file_path and not metadata:
             raise ValueError("Must provide either file_path or metadata.")
 
+        metadata = metadata or {}
+
         if file_path:
-            pdfs_paths = [path.strip() for path in file_path.split(";")]
+            indexed_files: List[str] = []
+            pdfs_paths = [path.strip() for path in file_path.split(";") if path.strip()]
             for pdf_path in pdfs_paths:
+                normalized_input_path = os.path.normpath(pdf_path)
+
+                candidate_paths: List[str] = [normalized_input_path]
+                if not os.path.isabs(normalized_input_path):
+                    candidate_paths.append(
+                        os.path.normpath(os.path.join(self.DATA_DIR, normalized_input_path))
+                    )
+
+                resolved_path: Optional[str] = next(
+                    (p for p in candidate_paths if os.path.exists(p)), None
+                )
+                if not resolved_path:
+                    raise FileNotFoundError(
+                        f"Failed to load PDF: File path {candidate_paths[0]} is not a valid file or url"
+                    )
+
                 # Read PDF
                 try:
-                    loader = PyMuPDFLoader(os.path.join(self.DATA_DIR, pdf_path))
+                    loader = PyMuPDFLoader(resolved_path)
                     docs = loader.load()
                 except Exception as e:
                     raise Exception(f"Failed to load PDF: {str(e)}")
 
+                effective_file_path = (
+                    resolved_path if os.path.isabs(normalized_input_path) else normalized_input_path
+                )
+                base_metadata = dict(metadata)
+                base_metadata.setdefault(
+                    "title", os.path.splitext(os.path.basename(effective_file_path))[0]
+                )
+                base_metadata.setdefault("file_path", effective_file_path)
+                base_metadata.setdefault("total_pages", len(docs))
+
                 for doc in docs:
-                    doc.metadata.update(metadata)
+                    doc.metadata.update(base_metadata)
 
                 # Split into chunks
                 text_splitter = RecursiveCharacterTextSplitter(
@@ -69,6 +98,10 @@ class DocumentManager:
                 # Add to vector store
                 self.vector_store.add_documents(chunks)
 
+                indexed_files.append(effective_file_path)
+
+            return {"indexed": indexed_files, "count": len(indexed_files)}
+
         else:
             doc = Document(
                 page_content=metadata.get("title", "")
@@ -77,6 +110,7 @@ class DocumentManager:
                 metadata=metadata,
             )
             self.vector_store.add_documents([doc])
+            return {"indexed": [], "count": 0}
 
     def list_documents(self) -> List[Dict]:
         """

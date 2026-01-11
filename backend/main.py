@@ -203,8 +203,9 @@ async def upload_document(file: UploadFile = File(...)):
         print(f"[UPLOAD] File saved successfully, starting indexing...")
 
         # Process and index the PDF
+        relative_path = os.path.join("pdfs", file.filename)
         result = document_manager.process_and_index_pdf(
-            file_path, None
+            relative_path, None
         )  # TODO add metadata
 
         print(f"[UPLOAD] Document indexed successfully: {result}")
@@ -252,17 +253,25 @@ def get_pdf(file_path: str):
     try:
         print(f"[PDF SERVE]: {file_path}")
 
+        normalized_path = os.path.normpath(file_path)
+        candidate_paths = [normalized_path]
+
+        if not os.path.isabs(normalized_path):
+            candidate_paths.append(os.path.normpath(os.path.join("data", normalized_path)))
+
+        resolved_path = next((p for p in candidate_paths if os.path.exists(p)), None)
+
         # Check if file exists
-        if not os.path.exists(file_path):
-            print(f"[PDF SERVE ERROR] File not found: {file_path}")
+        if not resolved_path:
+            print(f"[PDF SERVE ERROR] File not found: {normalized_path}")
             raise HTTPException(status_code=404, detail="PDF file not found")
 
-        print(f"[PDF SERVE] Serving file: {os.path.basename(file_path)}")
+        print(f"[PDF SERVE] Serving file: {os.path.basename(resolved_path)}")
         # Return the PDF file
         return FileResponse(
-            file_path,
+            resolved_path,
             media_type="application/pdf",
-            filename=os.path.basename(file_path),
+            filename=os.path.basename(resolved_path),
         )
     except HTTPException:
         raise
