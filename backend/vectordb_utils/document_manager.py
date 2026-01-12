@@ -10,6 +10,7 @@ from langchain_google_genai import GoogleGenerativeAIEmbeddings
 from langchain_community.vectorstores import FAISS
 from langchain_core.documents import Document
 from langchain_community.docstore.in_memory import InMemoryDocstore
+from llm.model import EmbeddingModel, get_model_instance
 
 
 class DocumentManager:
@@ -17,11 +18,9 @@ class DocumentManager:
     DATA_DIR = "data"
     VECTOR_DB_DIR = "data/faiss_db"
 
-    def __init__(self, google_api_key: str = None):
+    def __init__(self, model: EmbeddingModel):
+        self.embeddings = get_model_instance(model)
 
-        self.embeddings = GoogleGenerativeAIEmbeddings(
-            model="models/gemini-embedding-001", google_api_key=google_api_key
-        )
         self.vector_store = FAISS(
             embedding_function=self.embeddings,
             index=faiss.IndexFlatL2(3072),

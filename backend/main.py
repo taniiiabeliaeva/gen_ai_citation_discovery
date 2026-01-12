@@ -9,7 +9,8 @@ import shutil
 import uvicorn
 
 # Import your compiled LangGraph components and tools
-from core.agent import Model, create_research_langgraph
+from core.agent import create_research_langgraph
+from llm.model import LanguageModel, EmbeddingModel
 from tools.openalex_tools import ALL_OPENALEX_TOOLS
 from tools.rag_tools import ALL_RAG_TOOLS, set_document_manager
 from vectordb_utils.document_manager import DocumentManager
@@ -40,12 +41,12 @@ app.add_middleware(
 # 2. Agent Initialization
 # Compile the graph once at API startup
 try:
-    AGENT_APP = create_research_langgraph(ALL_TOOLS, Model.GEMINI_2_5_FLASH)
+    AGENT_APP = create_research_langgraph(ALL_TOOLS, LanguageModel.GEMINI_2_5_FLASH)
 except Exception as e:
     print(f"FATAL: Could not initialize LangGraph agent: {e}")
     AGENT_APP = None
 
-document_manager = DocumentManager(GOOGLE_API_KEY)
+document_manager = DocumentManager(EmbeddingModel.GEMINI_EMBEDDING_001)
 set_document_manager(document_manager)
 
 CHAT_HISTORY = {}

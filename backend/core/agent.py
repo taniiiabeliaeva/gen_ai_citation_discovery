@@ -1,7 +1,7 @@
 # core/agent.py
 from typing import List
 
-from llm.model import Model, get_model_instance
+from llm.model import LanguageModel, get_model_instance
 from core.graph_state import AgentState
 from dotenv import load_dotenv
 from langchain_core.messages import AIMessage, ToolMessage
@@ -71,7 +71,7 @@ Remember: `recommend_relevant_papers` is your PRIMARY tool for paper discovery. 
 # ------------------------------------
 
 
-def create_langgraph_nodes(all_tools, model: Model):
+def create_langgraph_nodes(all_tools, model: LanguageModel):
     """Defines the functions for the graph nodes (LLM call and Tool call)."""
 
     # Initialize LLM and bind tools
@@ -191,7 +191,7 @@ def route_decision(state: AgentState):
 # ------------------------------------
 
 
-def create_research_langgraph(llm_executor_tools: List, model: Model):
+def create_research_langgraph(llm_executor_tools: List, model: LanguageModel):
     """Builds and compiles the full LangGraph agent workflow."""
 
     # Load data needed by tools globally
