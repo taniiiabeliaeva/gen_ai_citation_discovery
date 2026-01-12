@@ -41,12 +41,12 @@ app.add_middleware(
 # 2. Agent Initialization
 # Compile the graph once at API startup
 try:
-    AGENT_APP = create_research_langgraph(ALL_TOOLS, LanguageModel.GEMINI_2_5_FLASH)
+    AGENT_APP = create_research_langgraph(ALL_TOOLS, LanguageModel.GLM_4_6)
 except Exception as e:
     print(f"FATAL: Could not initialize LangGraph agent: {e}")
     AGENT_APP = None
 
-document_manager = DocumentManager(EmbeddingModel.GEMINI_EMBEDDING_001)
+document_manager = DocumentManager(EmbeddingModel.MISTRAL_EMBEDDING_5)
 set_document_manager(document_manager)
 
 CHAT_HISTORY = {}
