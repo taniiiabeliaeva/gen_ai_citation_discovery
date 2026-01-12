@@ -12,7 +12,7 @@ import uvicorn
 from core.agent import create_research_langgraph
 from llm.model import LanguageModel, EmbeddingModel
 from tools.openalex_tools import ALL_OPENALEX_TOOLS
-from tools.rag_tools import ALL_RAG_TOOLS, set_document_manager
+from tools.rag_tools import ALL_RAG_TOOLS, tools_set_document_manager, tools_set_llm
 from vectordb_utils.document_manager import DocumentManager
 
 # --- CONFIGURATION ---
@@ -40,14 +40,20 @@ app.add_middleware(
 
 # 2. Agent Initialization
 # Compile the graph once at API startup
+SELECTED_LANGUAGE_MODEL = LanguageModel.GEMINI_2_5_FLASH
+SELECTED_EMBEDDING_MODEL = EmbeddingModel.GEMINI_EMBEDDING_001
+
 try:
-    AGENT_APP = create_research_langgraph(ALL_TOOLS, LanguageModel.GEMINI_2_5_FLASH)
+    AGENT_APP = create_research_langgraph(ALL_TOOLS, SELECTED_LANGUAGE_MODEL)
 except Exception as e:
     print(f"FATAL: Could not initialize LangGraph agent: {e}")
     AGENT_APP = None
 
-document_manager = DocumentManager(EmbeddingModel.GEMINI_EMBEDDING_001)
-set_document_manager(document_manager)
+document_manager = DocumentManager(SELECTED_EMBEDDING_MODEL)
+
+# Set LLM and DocumentManager for RAG tools
+tools_set_llm(SELECTED_LANGUAGE_MODEL)
+tools_set_document_manager(document_manager)
 
 CHAT_HISTORY = {}
 MAX_HISTORY_MESSAGES = 20
