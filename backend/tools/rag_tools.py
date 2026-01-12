@@ -1,6 +1,8 @@
 # tools/rag_tools.py
 from langchain_core.tools import tool
 from langchain_google_genai import ChatGoogleGenerativeAI
+from langchain_core.language_models.chat_models import BaseChatModel
+from llm.model import LanguageModel, get_model_instance
 from tools.data_utils import _get_openalex_id_from_title
 from core.graph_state import ResearchIdeas  # Import Pydantic models TODO
 from vectordb_utils.document_manager import DocumentManager
@@ -11,24 +13,28 @@ load_dotenv()
 GOOGLE_API_KEY = os.getenv("GOOGLE_API_KEY")
 
 _DOCUMENT_MANAGER: DocumentManager = None
+_LLM_INSTANCE: BaseChatModel = None
 
 
-def set_document_manager(document_manager: DocumentManager) -> None:
+def tools_set_document_manager(document_manager: DocumentManager) -> None:
     global _DOCUMENT_MANAGER
     _DOCUMENT_MANAGER = document_manager
 
+def tools_set_llm(model: LanguageModel) -> None:
+    global _LLM_INSTANCE
+    _LLM_INSTANCE = get_model_instance(model)
 
 def _get_vector_store():
     global _DOCUMENT_MANAGER
     if _DOCUMENT_MANAGER is None:
-        _DOCUMENT_MANAGER = DocumentManager(GOOGLE_API_KEY)
+        raise ValueError("DocumentManager is not set. Please initialize it first.")
     return _DOCUMENT_MANAGER.vector_store
 
 
 def _canonicalize_file_path(file_path: str) -> str:
     global _DOCUMENT_MANAGER
     if _DOCUMENT_MANAGER is None:
-        _DOCUMENT_MANAGER = DocumentManager(GOOGLE_API_KEY)
+        raise ValueError("DocumentManager is not set. Please initialize it first.")
     return _DOCUMENT_MANAGER._canonicalize_file_path(file_path)
 
 # --- RAG Tool List ---
@@ -61,13 +67,12 @@ def query_paper_for_answer(user_query: str, paper_file_path: str) -> str:
     context = "\n---\n".join([doc.page_content for doc in relevant_docs])
 
     # 2. Use LLM to synthesize the answer and cite the source
-    llm = ChatGoogleGenerativeAI(model="gemini-2.5-flash", temperature=0.1)
 
     rag_prompt = f"""
     You are a research analyst. Use the CONTEXT provided below to answer the USER QUESTION.
     SYNTHESIZED ANSWER:
     """
-    answer = llm.invoke(
+    answer = _LLM_INSTANCE.invoke(
         rag_prompt + context + f"\n\nUSER QUESTION: {user_query}"
     ).content
 
@@ -103,8 +108,6 @@ def generate_research_ideas(paper_file_path: str, num_ideas: int = 3) -> str:
     context = "\n---\n".join([doc.page_content for doc in relevant_docs])
 
     # 2. Use a specialized LLM prompt for generation
-    llm = ChatGoogleGenerativeAI(model="gemini-2.5-flash", temperature=0.3)
-
     generator_prompt = f"""
     You are an expert academic reviewer. Your task is to critically analyze the provided CONTEXT, which contains information about the limitations and future work of a scholarly paper.
     
@@ -119,7 +122,7 @@ def generate_research_ideas(paper_file_path: str, num_ideas: int = 3) -> str:
     
     Generated Research Ideas:
     """
-    response = llm.invoke(generator_prompt)
+    response = _LLM_INSTANCE.invoke(generator_prompt)
     return response.content
 
 
@@ -165,7 +168,6 @@ def answer_general_question(user_query: str) -> str:
     context = "\n---\n".join([doc.page_content for doc in relevant_docs])
 
     # 2. Use LLM to synthesize the answer and cite the sources
-    llm = ChatGoogleGenerativeAI(model="gemini-2.5-flash", temperature=0.1)
 
     rag_prompt = f"""
     You are a research assistant. Use the CONTEXT provided below to answer the USER QUESTION.
@@ -187,7 +189,7 @@ def answer_general_question(user_query: str) -> str:
     SYNTHESIZED ANSWER:
     """
 
-    answer = llm.invoke(rag_prompt).content
+    answer = _LLM_INSTANCE.invoke(rag_prompt).content
 
     # Append the sources explicitly to the final string output
     return f"{answer}\n\n--- SOURCES USED ---\n{source_list}"
@@ -323,8 +325,6 @@ def identify_research_gaps(topic: str, file_paths: str = None) -> str:
     context_str = "\n\n---\n\n".join(context_parts)
 
     # 3. LLM Synthesis
-    llm = ChatGoogleGenerativeAI(model="gemini-2.5-flash", temperature=0.3)
-
     gap_analysis_prompt = f"""
     You are a senior academic researcher conducting a literature review. 
     Analyze the provided EXCERPTS from various papers regarding the topic: '{topic}'.
@@ -343,7 +343,7 @@ def identify_research_gaps(topic: str, file_paths: str = None) -> str:
     - If the papers do not reveal clear gaps, admit it honestly rather than hallucinating one.
     """
 
-    response = llm.invoke(gap_analysis_prompt)
+    response = _LLM_INSTANCE.invoke(gap_analysis_prompt)
     return response.content
 
 @tool
@@ -410,8 +410,6 @@ def compare_papers(topic: str, file_paths: str = None, aspect: str = "methodolog
     # 3. LLM Synthesis
     context_str = "\n\n====================\n\n".join(selected_docs)
     
-    llm = ChatGoogleGenerativeAI(model="gemini-2.5-flash", temperature=0.1) # Low temp for factual comparison
-
     comparison_prompt = f"""
     You are an expert research analyst. Perform a comparative analysis of the following papers regarding: "{aspect}".
     
@@ -436,7 +434,7 @@ def compare_papers(topic: str, file_paths: str = None, aspect: str = "methodolog
     | ...   | ...      | ...          |
     """
 
-    response = llm.invoke(comparison_prompt)
+    response = _LLM_INSTANCE.invoke(comparison_prompt)
     return response.content
 
 
