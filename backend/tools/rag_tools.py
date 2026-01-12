@@ -256,8 +256,193 @@ def recommend_relevant_papers(topic: str, num_papers: int = 10) -> str:
     print(f"[RECOMMEND TOOL] Returning {len(papers_list)} unique papers")
     return json.dumps(result, indent=2)
 
+@tool
+def identify_research_gaps(topic: str, file_paths: str = None) -> str:
+    """
+    Analyzes multiple papers to identify unexplored areas, contradictions, and common limitations.
+    
+    Use this tool when the user asks:
+    - "What is missing in this field?"
+    - "Find research gaps in these papers"
+    - "What are the open problems?"
+
+    Args:
+        topic: The research topic (e.g., "LLM hallucinations").
+        file_paths: (Optional) A comma-separated string of file paths to restrict the analysis to specific papers.
+
+    Returns:
+        A structured analysis of research gaps with citations.
+    """
+    print(f"\n[GAP ANALYSIS TOOL] Analyzing gaps for topic: '{topic}'")
+    
+    # finding sections discussing weaknesses
+    # keywords that usually appear in "Future Work" or "Discussion" sections
+    search_query = f"{topic} limitations future work challenges open problems conclusion"
+    
+    relevant_docs = []
+
+    # MODE 1: Specific Files Selected
+    if file_paths:
+        # Split the string "path1.pdf, paper2.pdf" into a clean list
+        paths_list = [p.strip() for p in file_paths.split(',') if p.strip()]
+        print(f"[GAP ANALYSIS TOOL] Restricting search to {len(paths_list)} specific files.")
+        
+        for path in paths_list:
+            # Canonicalize path before searching
+            canonical_path = _canonicalize_file_path(path)
+            # We search EACH paper individually for its limitations/conclusions
+            retriever = _get_vector_store().as_retriever(
+                search_kwargs={"k": 5, "filter": {"file_path": canonical_path}}
+            )
+            docs = retriever.invoke(search_query)
+            relevant_docs.extend(docs)
+            
+    # MODE 2: General Topic Search (Fallback if no papers selected)
+    else:
+        print(f"[GAP ANALYSIS TOOL] Searching entire database (no files selected).")
+        retriever = _get_vector_store().as_retriever(search_kwargs={"k": 15})
+        relevant_docs = retriever.invoke(search_query)
+
+    if not relevant_docs:
+        return "I couldn't find enough information on limitations or future work in the selected documents. They might not contain explicit 'Future Work' sections."
+
+    # 2. Extract context and source metadata
+    context_parts = []
+    seen_sources = set()
+    
+    for doc in relevant_docs:
+        title = doc.metadata.get("title", "Untitled")
+        content = doc.page_content
+        # Create a unique key to avoid citing the exact same paper/chunk multiple times
+        source_key = f"{title}-{content[:50]}"
+        
+        if source_key not in seen_sources:
+            context_parts.append(f"Source: {title}\nExcerpt: {content}")
+            seen_sources.add(source_key)
+
+    context_str = "\n\n---\n\n".join(context_parts)
+
+    # 3. LLM Synthesis
+    llm = ChatGoogleGenerativeAI(model="gemini-2.5-flash", temperature=0.3)
+
+    gap_analysis_prompt = f"""
+    You are a senior academic researcher conducting a literature review. 
+    Analyze the provided EXCERPTS from various papers regarding the topic: '{topic}'.
+
+    Your goal is to identify **Research Gaps**. Look for:
+    1. **Common Limitations:** Problems that multiple papers mention but haven't solved.
+    2. **Contradictions:** Areas where Paper A says one thing and Paper B says another.
+    3. **Underexplored Areas:** Methodologies or questions that are mentioned as "future work".
+
+    CONTEXT EXCERPTS:
+    {context_str}
+
+    INSTRUCTIONS:
+    - Output a structured response with clear headings (e.g., "## 1. Unsolved Limitations").
+    - **Crucially**: specificy WHICH papers support this gap (e.g., "Paper A and Paper B both struggle with high latency...").
+    - If the papers do not reveal clear gaps, admit it honestly rather than hallucinating one.
+    """
+
+    response = llm.invoke(gap_analysis_prompt)
+    return response.content
+
+@tool
+def compare_papers(topic: str, file_paths: str = None, aspect: str = "methodology, findings, and limitations") -> str:
+    """
+    Performs a comparative analysis between multiple papers on a specific aspect.
+    
+    Use this tool when the user asks:
+    - "Compare Paper A and Paper B"
+    - "How do these papers differ in their methodology?"
+    - "Contrast the findings of the papers on [topic]"
+    
+    Args:
+        topic: The general topic or specific question to guide the comparison (e.g. "transformer architectures").
+        file_paths: (Optional) A comma-separated string of specific file paths to compare. If not provided, the tool searches for relevant papers on the topic.
+        aspect: (Optional) The specific aspect to compare (default: "methodology, findings, and limitations").
+        
+    Returns:
+        A structured comparison table or analysis.
+    """
+    print(f"\n[COMPARISON TOOL] Comparing papers on aspect: '{aspect}'")
+    
+    selected_docs = []
+    
+    # Scenario A: User specified specific files (e.g., selected in frontend)
+    if file_paths:
+        paths_list = [p.strip() for p in file_paths.split(',')]
+        print(f"[COMPARISON TOOL] specific files requested: {paths_list}")
+        
+        for path in paths_list:
+            canonical_path = _canonicalize_file_path(path)
+            # Retrieve focused chunks for THIS specific paper
+            retriever = _get_vector_store().as_retriever(
+                search_kwargs={"k": 3, "filter": {"file_path": canonical_path}}
+            )
+            # We ask specifically about the aspect for this paper
+            docs = retriever.invoke(f"{aspect} in {topic}")
+            if docs:
+                # Tag these chunks with the filename so the LLM knows which paper is which
+                content_str = "\n".join([d.page_content for d in docs])
+                selected_docs.append(f"PAPER: {path}\nCONTENT:\n{content_str}")
+    
+    # Scenario B: User just gave a topic, find the most relevant ones to compare
+    else:
+        print(f"[COMPARISON TOOL] Searching for papers relevant to: {topic}")
+        retriever = _get_vector_store().as_retriever(search_kwargs={"k": 8})
+        docs = retriever.invoke(f"{topic} {aspect}")
+        
+        # Group chunks by paper title/source to organize input for LLM
+        grouped_content = {}
+        for doc in docs:
+            source = doc.metadata.get("title") or doc.metadata.get("source", "Unknown Paper")
+            if source not in grouped_content:
+                grouped_content[source] = []
+            grouped_content[source].append(doc.page_content)
+            
+        for source, contents in grouped_content.items():
+            content_str = "\n".join(contents)
+            selected_docs.append(f"PAPER: {source}\nCONTENT:\n{content_str}")
+
+    if not selected_docs:
+        return "Not enough information found to perform a comparison. Please upload more documents or specify a broader topic."
+
+    # 3. LLM Synthesis
+    context_str = "\n\n====================\n\n".join(selected_docs)
+    
+    llm = ChatGoogleGenerativeAI(model="gemini-2.5-flash", temperature=0.1) # Low temp for factual comparison
+
+    comparison_prompt = f"""
+    You are an expert research analyst. Perform a comparative analysis of the following papers regarding: "{aspect}".
+    
+    INPUT CONTEXT:
+    {context_str}
+    
+    INSTRUCTIONS:
+    1. Identify the key approaches, findings, or claims for EACH paper regarding '{aspect}'.
+    2. Highlight the **Similarities** (where do they agree?).
+    3. Highlight the **Differences** (where do they diverge?).
+    4. Create a comparison table in Markdown format if appropriate.
+    5. Be specific. Do not generalize. Cite the paper titles/filenames.
+    
+    OUTPUT FORMAT:
+    ## Comparative Analysis: {aspect}
+    
+    [Detailed text analysis]
+    
+    ### Comparison Table
+    | Paper | Approach | Key Findings |
+    |-------|----------|--------------|
+    | ...   | ...      | ...          |
+    """
+
+    response = llm.invoke(comparison_prompt)
+    return response.content
+
 
 ALL_RAG_TOOLS.append(query_paper_for_answer)
 ALL_RAG_TOOLS.append(generate_research_ideas)
 ALL_RAG_TOOLS.append(answer_general_question)
 ALL_RAG_TOOLS.append(recommend_relevant_papers)
+ALL_RAG_TOOLS.append(identify_research_gaps)
+ALL_RAG_TOOLS.append(compare_papers)
