@@ -1,16 +1,11 @@
 # core/agent.py
-import os
-from enum import Enum
 from typing import List
 
+from llm.model import Model, get_model_instance
 from core.graph_state import AgentState
 from dotenv import load_dotenv
-from langchain_core.language_models.chat_models import BaseChatModel
 from langchain_core.messages import AIMessage, ToolMessage
-from langchain_google_genai import ChatGoogleGenerativeAI
-from langchain_openai import ChatOpenAI
 from langgraph.graph import END, START, StateGraph
-from pydantic import SecretStr
 from tools.data_utils import load_paper_data  # Assuming this loads global PAPER_DF
 
 # Load environment variables
@@ -71,35 +66,6 @@ WORKFLOW:
 Remember: `recommend_relevant_papers` is your PRIMARY tool for paper discovery. `compare_papers` is for deep comparative analysis. `answer_general_question` is your fallback tool for answering questions about general content."""
 
 
-class Model(Enum):
-    GEMINI_2_5_FLASH = "gemini-2.5-flash"
-    GLM_4_6 = "glm-4.6-355b"
-
-    @property
-    def key(self):
-        if self == Model.GEMINI_2_5_FLASH:
-            return os.getenv("GOOGLE_API_KEY")
-        elif self == Model.GLM_4_6:
-            return os.getenv("AQUEDUCT_API_KEY")
-
-
-def _get_model_instance(model: Model) -> BaseChatModel:
-    if model == Model.GEMINI_2_5_FLASH:
-        return ChatGoogleGenerativeAI(
-            model=model.value, temperature=0.1, google_api_key=model.key
-        )
-    elif model == Model.GLM_4_6:
-        return ChatOpenAI(
-            model=model.value,
-            temperature=0.1,
-            base_url="https://aqueduct.ai.datalab.tuwien.ac.at",
-            api_key=SecretStr(model.key),
-            timeout=295.0,
-        )
-    else:
-        raise ValueError(f"Unsupported model: {model}")
-
-
 # ------------------------------------
 # 1. NODE DEFINITIONS
 # ------------------------------------
@@ -109,7 +75,7 @@ def create_langgraph_nodes(all_tools, model: Model):
     """Defines the functions for the graph nodes (LLM call and Tool call)."""
 
     # Initialize LLM and bind tools
-    llm = _get_model_instance(model)
+    llm = get_model_instance(model)
 
     model_with_tools = llm.bind_tools(all_tools)
     tools_by_name = {tool.name: tool for tool in all_tools}
@@ -232,9 +198,7 @@ def create_research_langgraph(llm_executor_tools: List, model: Model):
     load_paper_data()
 
     # Define nodes and router
-    call_model, call_tool = create_langgraph_nodes(
-        llm_executor_tools, model
-    )
+    call_model, call_tool = create_langgraph_nodes(llm_executor_tools, model)
 
     workflow = StateGraph(AgentState)
 
