@@ -1,12 +1,11 @@
 # core/agent.py
-import os
-from langgraph.graph import StateGraph, START, END
-from langchain_google_genai import ChatGoogleGenerativeAI
-from langchain_core.messages import ToolMessage, AIMessage
 from typing import List
-from dotenv import load_dotenv
 
+from llm.model import LanguageModel, get_model_instance
 from core.graph_state import AgentState
+from dotenv import load_dotenv
+from langchain_core.messages import AIMessage, ToolMessage
+from langgraph.graph import END, START, StateGraph
 from tools.data_utils import load_paper_data  # Assuming this loads global PAPER_DF
 
 # Load environment variables
@@ -66,28 +65,28 @@ WORKFLOW:
 
 Remember: `recommend_relevant_papers` is your PRIMARY tool for paper discovery. `compare_papers` is for deep comparative analysis. `answer_general_question` is your fallback tool for answering questions about general content."""
 
+
 # ------------------------------------
 # 1. NODE DEFINITIONS
 # ------------------------------------
 
 
-def create_langgraph_nodes(all_tools, google_api_key: str):
+def create_langgraph_nodes(all_tools, model: LanguageModel):
     """Defines the functions for the graph nodes (LLM call and Tool call)."""
 
     # Initialize LLM and bind tools
-    llm = ChatGoogleGenerativeAI(
-        model="gemini-2.5-flash", temperature=0.1, google_api_key=google_api_key
-    )
+    llm = get_model_instance(model)
+
     model_with_tools = llm.bind_tools(all_tools)
     tools_by_name = {tool.name: tool for tool in all_tools}
 
     def call_model(state: AgentState):
         """Node 1: Calls the LLM (Gemini) with history to decide the next step."""
-        print(f"\n{'='*60}")
+        print(f"\n{'=' * 60}")
         print(
             f"[AGENT STEP] Calling LLM with {len(state['messages'])} message(s) in history"
         )
-        print(f"{'='*60}")
+        print(f"{'=' * 60}")
 
         # Prepend system prompt to guide the agent's behavior
         from langchain_core.messages import SystemMessage
@@ -122,9 +121,9 @@ def create_langgraph_nodes(all_tools, google_api_key: str):
         last_message = state["messages"][-1]
         tool_calls = last_message.tool_calls
 
-        print(f"\n{'='*60}")
+        print(f"\n{'=' * 60}")
         print(f"[AGENT STEP] Executing {len(tool_calls)} tool(s)")
-        print(f"{'='*60}")
+        print(f"{'=' * 60}")
 
         tool_results = []
         for idx, call in enumerate(tool_calls, 1):
@@ -181,9 +180,9 @@ def route_decision(state: AgentState):
         return "continue"
     else:
         print(f"[ROUTING] → Ending agent loop (no more tool calls)")
-        print(f"{'='*60}")
+        print(f"{'=' * 60}")
         print(f"[AGENT] Workflow complete - returning final answer to user")
-        print(f"{'='*60}\n")
+        print(f"{'=' * 60}\n")
         return "end"
 
 
@@ -192,14 +191,14 @@ def route_decision(state: AgentState):
 # ------------------------------------
 
 
-def create_research_langgraph(llm_executor_tools: List, google_api_key: str):
+def create_research_langgraph(llm_executor_tools: List, model: LanguageModel):
     """Builds and compiles the full LangGraph agent workflow."""
 
     # Load data needed by tools globally
     load_paper_data()
 
     # Define nodes and router
-    call_model, call_tool = create_langgraph_nodes(llm_executor_tools, google_api_key)
+    call_model, call_tool = create_langgraph_nodes(llm_executor_tools, model)
 
     workflow = StateGraph(AgentState)
 
