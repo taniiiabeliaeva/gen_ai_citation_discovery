@@ -19,15 +19,22 @@ class DocumentManager:
     VECTOR_DB_DIR = "data/faiss_db"
 
     def __init__(self, model: EmbeddingModel):
+        self.model = model
         self.embeddings = get_model_instance(model)
+        
+        # Get the appropriate vector size and directory for this model
+        if model == EmbeddingModel.GEMINI_EMBEDDING_001:
+            vector_size = 3072
+            self.VECTOR_DB_DIR = "data/faiss_db_gemini"
+        elif model == EmbeddingModel.MISTRAL_EMBEDDING_5:
+            vector_size = 4096
+            self.VECTOR_DB_DIR = "data/faiss_db_mistral"
+        else:
+            raise ValueError(f"Unsupported embedding model: {model}")
 
         self.vector_store = FAISS(
             embedding_function=self.embeddings,
-            # This is hard coded and different for Gemini...
-            # We need different vector sizes for each.
-            # Gemini was 3072.
-            # Each model would require a different store. What should we settle for
-            index=faiss.IndexFlatL2(4096),
+            index=faiss.IndexFlatL2(vector_size),
             docstore=InMemoryDocstore(),
             index_to_docstore_id={},
         )

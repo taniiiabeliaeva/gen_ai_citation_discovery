@@ -6,6 +6,12 @@ export default function ChatInterface({ selectedDocIds = [], selectedText = '', 
     ]);
     const [input, setInput] = useState('');
     const [isLoading, setIsLoading] = useState(false);
+    const [modelPresets, setModelPresets] = useState({
+        tuwien: { display_name: "TU Wien (GLM-4.6 + Mistral)" },
+        gemini: { display_name: "Google Gemini 2.5 Flash" }
+    });
+    const [currentModel, setCurrentModel] = useState('gemini');
+    const [isSwitchingModel, setIsSwitchingModel] = useState(false);
     const messagesEndRef = useRef(null);
     const sessionIdRef = useRef(Math.random().toString(36).substring(7));
 
@@ -16,6 +22,63 @@ export default function ChatInterface({ selectedDocIds = [], selectedText = '', 
     useEffect(() => {
         scrollToBottom();
     }, [messages]);
+
+    // Fetch available models on component mount
+    useEffect(() => {
+        const fetchModels = async () => {
+            try {
+                console.log('[CHAT] Fetching available models from backend...');
+                const response = await fetch('http://127.0.0.1:8000/api/models');
+                if (response.ok) {
+                    const data = await response.json();
+                    console.log('[CHAT] Received model data:', data);
+                    setModelPresets(data.presets);
+                    setCurrentModel(data.current);
+                } else {
+                    console.error('[CHAT] Failed to fetch models, status:', response.status);
+                }
+            } catch (error) {
+                console.error('[CHAT] Failed to fetch models:', error);
+                console.log('[CHAT] Using default model presets');
+            }
+        };
+        fetchModels();
+    }, []);
+
+    const handleModelSwitch = async (presetName) => {
+        if (presetName === currentModel || isSwitchingModel) return;
+        
+        setIsSwitchingModel(true);
+        try {
+            const response = await fetch(`http://127.0.0.1:8000/api/models/switch/${presetName}`, {
+                method: 'POST',
+            });
+            
+            if (response.ok) {
+                const data = await response.json();
+                setCurrentModel(data.current);
+                // Clear messages and reset session
+                setMessages([
+                    { role: 'agent', content: `Switched to ${modelPresets[presetName]?.display_name || presetName}. How can I help you?` }
+                ]);
+                sessionIdRef.current = Math.random().toString(36).substring(7);
+            } else {
+                console.error('Failed to switch model');
+                setMessages(prev => [...prev, { 
+                    role: 'agent', 
+                    content: 'Failed to switch model. Please try again.' 
+                }]);
+            }
+        } catch (error) {
+            console.error('Error switching model:', error);
+            setMessages(prev => [...prev, { 
+                role: 'agent', 
+                content: 'Error switching model. Please check if the backend is running.' 
+            }]);
+        } finally {
+            setIsSwitchingModel(false);
+        }
+    };
 
 
     const handleSubmit = async (e) => {
@@ -173,13 +236,40 @@ export default function ChatInterface({ selectedDocIds = [], selectedText = '', 
             {/* Header */}
             <header className="bg-gray-800 border-b border-gray-700 p-4 shadow-md">
                 <div className="max-w-4xl mx-auto">
-                    <div className="flex items-center gap-3">
-                        <div className="w-8 h-8 rounded-full bg-gradient-to-br from-blue-500 to-purple-600 flex items-center justify-center">
-                            <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" strokeWidth={1.5} stroke="currentColor" className="w-5 h-5 text-white">
-                                <path strokeLinecap="round" strokeLinejoin="round" d="M12 6.042A8.967 8.967 0 006 3.75c-1.052 0-2.062.18-3 .512v14.25A8.987 8.987 0 016 18c2.305 0 4.408.867 6 2.292m0-14.25a8.966 8.966 0 016-2.292c1.052 0 2.062.18 3 .512v14.25A8.987 8.987 0 0018 18a8.967 8.967 0 00-6 2.292m0-14.25v14.25" />
-                            </svg>
+                    <div className="flex items-center justify-between gap-3">
+                        <div className="flex items-center gap-3">
+                            <div className="w-8 h-8 rounded-full bg-gradient-to-br from-blue-500 to-purple-600 flex items-center justify-center">
+                                <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" strokeWidth={1.5} stroke="currentColor" className="w-5 h-5 text-white">
+                                    <path strokeLinecap="round" strokeLinejoin="round" d="M12 6.042A8.967 8.967 0 006 3.75c-1.052 0-2.062.18-3 .512v14.25A8.987 8.987 0 016 18c2.305 0 4.408.867 6 2.292m0-14.25a8.966 8.966 0 016-2.292c1.052 0 2.062.18 3 .512v14.25A8.987 8.987 0 0018 18a8.967 8.967 0 00-6 2.292m0-14.25v14.25" />
+                                </svg>
+                            </div>
+                            <h1 className="text-xl font-semibold tracking-tight">Gen AI Citation Discovery</h1>
                         </div>
-                        <h1 className="text-xl font-semibold tracking-tight">Gen AI Citation Discovery</h1>
+                        
+                        {/* Model Selector */}
+                        <div className="flex items-center gap-2">
+                            <label htmlFor="model-selector" className="text-sm text-gray-400">Model:</label>
+                            <select
+                                id="model-selector"
+                                value={currentModel}
+                                onChange={(e) => handleModelSwitch(e.target.value)}
+                                disabled={isSwitchingModel || isLoading}
+                                className="bg-gray-700 text-white border border-gray-600 rounded-lg px-3 py-1.5 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500 disabled:opacity-50 disabled:cursor-not-allowed"
+                            >
+                                {Object.entries(modelPresets).map(([key, preset]) => (
+                                    <option key={key} value={key}>
+                                        {preset.display_name}
+                                    </option>
+                                ))}
+                            </select>
+                            {isSwitchingModel && (
+                                <div className="flex space-x-1">
+                                    <div className="w-1.5 h-1.5 bg-blue-400 rounded-full animate-bounce" style={{ animationDelay: '0ms' }}></div>
+                                    <div className="w-1.5 h-1.5 bg-blue-400 rounded-full animate-bounce" style={{ animationDelay: '150ms' }}></div>
+                                    <div className="w-1.5 h-1.5 bg-blue-400 rounded-full animate-bounce" style={{ animationDelay: '300ms' }}></div>
+                                </div>
+                            )}
+                        </div>
                     </div>
                 </div>
             </header>
