@@ -6,6 +6,12 @@ export default function ChatInterface({ selectedDocIds = [], selectedText = '', 
     ]);
     const [input, setInput] = useState('');
     const [isLoading, setIsLoading] = useState(false);
+    const [modelPresets, setModelPresets] = useState({
+        tuwien: { display_name: "TU Wien (GLM-4.6 + Mistral)" },
+        gemini: { display_name: "Google Gemini 2.5 Flash" }
+    });
+    const [currentModel, setCurrentModel] = useState('gemini');
+    const [isSwitchingModel, setIsSwitchingModel] = useState(false);
     const messagesEndRef = useRef(null);
     const sessionIdRef = useRef(Math.random().toString(36).substring(7));
 
@@ -16,6 +22,63 @@ export default function ChatInterface({ selectedDocIds = [], selectedText = '', 
     useEffect(() => {
         scrollToBottom();
     }, [messages]);
+
+    // Fetch available models on component mount
+    useEffect(() => {
+        const fetchModels = async () => {
+            try {
+                console.log('[CHAT] Fetching available models from backend...');
+                const response = await fetch('http://127.0.0.1:8000/api/models');
+                if (response.ok) {
+                    const data = await response.json();
+                    console.log('[CHAT] Received model data:', data);
+                    setModelPresets(data.presets);
+                    setCurrentModel(data.current);
+                } else {
+                    console.error('[CHAT] Failed to fetch models, status:', response.status);
+                }
+            } catch (error) {
+                console.error('[CHAT] Failed to fetch models:', error);
+                console.log('[CHAT] Using default model presets');
+            }
+        };
+        fetchModels();
+    }, []);
+
+    const handleModelSwitch = async (presetName) => {
+        if (presetName === currentModel || isSwitchingModel) return;
+        
+        setIsSwitchingModel(true);
+        try {
+            const response = await fetch(`http://127.0.0.1:8000/api/models/switch/${presetName}`, {
+                method: 'POST',
+            });
+            
+            if (response.ok) {
+                const data = await response.json();
+                setCurrentModel(data.current);
+                // Clear messages and reset session
+                setMessages([
+                    { role: 'agent', content: `Switched to ${modelPresets[presetName]?.display_name || presetName}. How can I help you?` }
+                ]);
+                sessionIdRef.current = Math.random().toString(36).substring(7);
+            } else {
+                console.error('Failed to switch model');
+                setMessages(prev => [...prev, { 
+                    role: 'agent', 
+                    content: 'Failed to switch model. Please try again.' 
+                }]);
+            }
+        } catch (error) {
+            console.error('Error switching model:', error);
+            setMessages(prev => [...prev, { 
+                role: 'agent', 
+                content: 'Error switching model. Please check if the backend is running.' 
+            }]);
+        } finally {
+            setIsSwitchingModel(false);
+        }
+    };
 
 
     const handleSubmit = async (e) => {
@@ -171,15 +234,55 @@ export default function ChatInterface({ selectedDocIds = [], selectedText = '', 
     return (
         <div className="flex flex-col h-screen bg-gray-900 text-gray-100 font-sans">
             {/* Header */}
-            <header className="bg-gray-800 border-b border-gray-700 p-4 shadow-md">
-                <div className="max-w-4xl mx-auto">
-                    <div className="flex items-center gap-3">
-                        <div className="w-8 h-8 rounded-full bg-gradient-to-br from-blue-500 to-purple-600 flex items-center justify-center">
-                            <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" strokeWidth={1.5} stroke="currentColor" className="w-5 h-5 text-white">
-                                <path strokeLinecap="round" strokeLinejoin="round" d="M12 6.042A8.967 8.967 0 006 3.75c-1.052 0-2.062.18-3 .512v14.25A8.987 8.987 0 016 18c2.305 0 4.408.867 6 2.292m0-14.25a8.966 8.966 0 016-2.292c1.052 0 2.062.18 3 .512v14.25A8.987 8.987 0 0018 18a8.967 8.967 0 00-6 2.292m0-14.25v14.25" />
-                            </svg>
+            <header className="bg-gradient-to-r from-gray-800 to-gray-900 border-b border-gray-700 shadow-lg">
+                <div className="max-w-7xl mx-auto px-6 py-4">
+                    <div className="flex items-center justify-between">
+                        {/* Left: Title and Icon */}
+                        <div className="flex items-center gap-3">
+                            <div className="w-10 h-10 rounded-xl bg-gradient-to-br from-blue-500 via-blue-600 to-purple-600 flex items-center justify-center shadow-lg">
+                                <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" strokeWidth={2} stroke="currentColor" className="w-6 h-6 text-white">
+                                    <path strokeLinecap="round" strokeLinejoin="round" d="M12 6.042A8.967 8.967 0 006 3.75c-1.052 0-2.062.18-3 .512v14.25A8.987 8.987 0 016 18c2.305 0 4.408.867 6 2.292m0-14.25a8.966 8.966 0 016-2.292c1.052 0 2.062.18 3 .512v14.25A8.987 8.987 0 0018 18a8.967 8.967 0 00-6 2.292m0-14.25v14.25" />
+                                </svg>
+                            </div>
+                            <div>
+                                <h1 className="text-lg font-bold text-white tracking-tight">Citation Discovery</h1>
+                                <p className="text-xs text-gray-400">AI Research Assistant</p>
+                            </div>
                         </div>
-                        <h1 className="text-xl font-semibold tracking-tight">Gen AI Citation Discovery</h1>
+                        
+                        {/* Right: Model Selector */}
+                        <div className="flex items-center gap-3 bg-gray-700/50 rounded-lg px-4 py-2 backdrop-blur-sm border border-gray-600/50">
+                            <div className="flex items-center gap-2">
+                                <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" strokeWidth={1.5} stroke="currentColor" className="w-4 h-4 text-gray-400">
+                                    <path strokeLinecap="round" strokeLinejoin="round" d="M9.813 15.904L9 18.75l-.813-2.846a4.5 4.5 0 00-3.09-3.09L2.25 12l2.846-.813a4.5 4.5 0 003.09-3.09L9 5.25l.813 2.846a4.5 4.5 0 003.09 3.09L15.75 12l-2.846.813a4.5 4.5 0 00-3.09 3.09zM18.259 8.715L18 9.75l-.259-1.035a3.375 3.375 0 00-2.455-2.456L14.25 6l1.036-.259a3.375 3.375 0 002.455-2.456L18 2.25l.259 1.035a3.375 3.375 0 002.456 2.456L21.75 6l-1.035.259a3.375 3.375 0 00-2.456 2.456zM16.894 20.567L16.5 21.75l-.394-1.183a2.25 2.25 0 00-1.423-1.423L13.5 18.75l1.183-.394a2.25 2.25 0 001.423-1.423l.394-1.183.394 1.183a2.25 2.25 0 001.423 1.423l1.183.394-1.183.394a2.25 2.25 0 00-1.423 1.423z" />
+                                </svg>
+                                <select
+                                    id="model-selector"
+                                    value={currentModel}
+                                    onChange={(e) => handleModelSwitch(e.target.value)}
+                                    disabled={isSwitchingModel || isLoading}
+                                    className="bg-transparent text-white text-sm font-medium focus:outline-none cursor-pointer disabled:opacity-50 disabled:cursor-not-allowed appearance-none pr-8"
+                                    style={{
+                                        backgroundImage: `url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' fill='none' viewBox='0 0 24 24' stroke='%239CA3AF'%3E%3Cpath stroke-linecap='round' stroke-linejoin='round' stroke-width='2' d='M19 9l-7 7-7-7'%3E%3C/path%3E%3C/svg%3E")`,
+                                        backgroundRepeat: 'no-repeat',
+                                        backgroundPosition: 'right 0.5rem center',
+                                        backgroundSize: '1.25rem'
+                                    }}
+                                >
+                                    {Object.entries(modelPresets).map(([key, preset]) => (
+                                        <option key={key} value={key} className="bg-gray-800">
+                                            {preset.display_name}
+                                        </option>
+                                    ))}
+                                </select>
+                            </div>
+                            {isSwitchingModel && (
+                                <svg className="animate-spin h-4 w-4 text-blue-400" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24">
+                                    <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"></circle>
+                                    <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
+                                </svg>
+                            )}
+                        </div>
                     </div>
                 </div>
             </header>

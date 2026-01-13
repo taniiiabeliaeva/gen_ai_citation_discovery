@@ -41,8 +41,22 @@ app.add_middleware(
 
 # 2. Agent Initialization
 # Compile the graph once at API startup
-SELECTED_LANGUAGE_MODEL = LanguageModel.GLM_4_6
-SELECTED_EMBEDDING_MODEL = EmbeddingModel.MISTRAL_EMBEDDING_5
+SELECTED_LANGUAGE_MODEL = LanguageModel.GEMINI_2_5_FLASH
+SELECTED_EMBEDDING_MODEL = EmbeddingModel.GEMINI_EMBEDDING_001
+
+# Model presets: matching language model with embedding model
+MODEL_PRESETS = {
+    "tuwien": {
+        "language_model": LanguageModel.GLM_4_6,
+        "embedding_model": EmbeddingModel.MISTRAL_EMBEDDING_5,
+        "display_name": "TU Wien (GLM-4.6 + Mistral)"
+    },
+    "gemini": {
+        "language_model": LanguageModel.GEMINI_2_5_FLASH,
+        "embedding_model": EmbeddingModel.GEMINI_EMBEDDING_001,
+        "display_name": "Google Gemini 2.5 Flash"
+    }
+}
 
 try:
     AGENT_APP = create_research_langgraph(ALL_TOOLS, SELECTED_LANGUAGE_MODEL)
@@ -58,6 +72,7 @@ tools_set_document_manager(document_manager)
 
 CHAT_HISTORY = {}
 MAX_HISTORY_MESSAGES = 20
+CURRENT_MODEL_PRESET = "gemini"  # Default to Gemini
 
 
 def _format_sse_data(data: str) -> str:
@@ -68,6 +83,70 @@ def _format_sse_data(data: str) -> str:
 @app.get("/health")
 def health_check():
     return {"status": "ok", "agent_ready": AGENT_APP is not None}
+
+
+@app.get("/api/models")
+def get_models():
+    """Get available model presets and current selection."""
+    return JSONResponse(content={
+        "presets": {
+            key: {"display_name": preset["display_name"]}
+            for key, preset in MODEL_PRESETS.items()
+        },
+        "current": CURRENT_MODEL_PRESET
+    })
+
+
+@app.post("/api/models/switch/{preset_name}")
+def switch_model(preset_name: str):
+    """Switch to a different model preset."""
+    global AGENT_APP, document_manager, SELECTED_LANGUAGE_MODEL, SELECTED_EMBEDDING_MODEL, CURRENT_MODEL_PRESET, CHAT_HISTORY
+
+    print(f"\n[API REQUEST] POST /api/models/switch/{preset_name}")
+
+    if preset_name not in MODEL_PRESETS:
+        raise HTTPException(status_code=400, detail=f"Invalid preset. Available: {list(MODEL_PRESETS.keys())}")
+
+    if preset_name == CURRENT_MODEL_PRESET:
+        print(f"[MODEL SWITCH] Already using {preset_name}")
+        return JSONResponse(content={"message": f"Already using {preset_name}", "current": CURRENT_MODEL_PRESET})
+
+    try:
+        preset = MODEL_PRESETS[preset_name]
+        new_language_model = preset["language_model"]
+        new_embedding_model = preset["embedding_model"]
+
+        print(f"[MODEL SWITCH] Switching to {preset['display_name']}")
+        print(f"[MODEL SWITCH] Language Model: {new_language_model.value}")
+        print(f"[MODEL SWITCH] Embedding Model: {new_embedding_model.value}")
+
+        # Reinitialize agent with new language model
+        AGENT_APP = create_research_langgraph(ALL_TOOLS, new_language_model)
+
+        # Reinitialize document manager with new embedding model
+        document_manager = DocumentManager(new_embedding_model)
+
+        # Update global settings
+        SELECTED_LANGUAGE_MODEL = new_language_model
+        SELECTED_EMBEDDING_MODEL = new_embedding_model
+        CURRENT_MODEL_PRESET = preset_name
+
+        # Reset RAG tools with new instances
+        tools_set_llm(new_language_model)
+        tools_set_document_manager(document_manager)
+
+        # Clear chat history as context may not be compatible
+        CHAT_HISTORY.clear()
+
+        print(f"[MODEL SWITCH] Successfully switched to {preset_name}")
+        return JSONResponse(content={
+            "message": f"Successfully switched to {preset['display_name']}",
+            "current": CURRENT_MODEL_PRESET
+        })
+
+    except Exception as e:
+        print(f"[MODEL SWITCH ERROR] Failed to switch models: {e}")
+        raise HTTPException(status_code=500, detail=f"Failed to switch models: {str(e)}")
 
 
 @app.post("/api/chat/{session_id}")
