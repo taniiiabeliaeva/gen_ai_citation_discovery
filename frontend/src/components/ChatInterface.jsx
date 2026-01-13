@@ -1,4 +1,8 @@
 import React, { useState, useRef, useEffect } from 'react';
+import ReactMarkdown from 'react-markdown';
+import remarkGfm from 'remark-gfm';
+import rehypeHighlight from 'rehype-highlight';
+import 'highlight.js/styles/github-dark.css';
 
 export default function ChatInterface({ selectedDocIds = [], selectedText = '', onRelevanceUpdate, documents = [] }) {
     const [messages, setMessages] = useState([
@@ -314,8 +318,46 @@ export default function ChatInterface({ selectedDocIds = [], selectedText = '', 
                                             📄 {msg.selectedDocs.map(getPaperTitle).join(', ')}
                                         </div>
                                     )}
-                                    <div className="whitespace-pre-wrap leading-relaxed text-[0.95rem]">
-                                        {msg.content}
+                                    <div className={`leading-relaxed text-[0.95rem] ${msg.role === 'user' ? 'whitespace-pre-wrap' : 'markdown-content'}`}>
+                                        {msg.role === 'user' ? (
+                                            msg.content
+                                        ) : (
+                                            <ReactMarkdown
+                                                remarkPlugins={[remarkGfm]}
+                                                rehypePlugins={[rehypeHighlight]}
+                                                components={{
+                                                    // Style headings
+                                                    h1: ({node, ...props}) => <h1 className="text-xl font-bold mt-4 mb-2" {...props} />,
+                                                    h2: ({node, ...props}) => <h2 className="text-lg font-semibold mt-3 mb-2" {...props} />,
+                                                    h3: ({node, ...props}) => <h3 className="text-base font-semibold mt-2 mb-1" {...props} />,
+                                                    // Style lists
+                                                    ul: ({node, ...props}) => <ul className="list-disc list-inside my-2 space-y-1" {...props} />,
+                                                    ol: ({node, ...props}) => <ol className="list-decimal list-inside my-2 space-y-1" {...props} />,
+                                                    li: ({node, ...props}) => <li className="ml-2" {...props} />,
+                                                    // Style code
+                                                    code: ({node, inline, ...props}) => 
+                                                        inline ? (
+                                                            <code className="bg-gray-700 px-1.5 py-0.5 rounded text-sm" {...props} />
+                                                        ) : (
+                                                            <code className="block bg-gray-700 p-3 rounded-lg my-2 overflow-x-auto text-sm" {...props} />
+                                                        ),
+                                                    pre: ({node, ...props}) => <pre className="bg-gray-700 rounded-lg my-2 overflow-x-auto" {...props} />,
+                                                    // Style blockquotes
+                                                    blockquote: ({node, ...props}) => <blockquote className="border-l-4 border-gray-600 pl-4 italic my-2" {...props} />,
+                                                    // Style links
+                                                    a: ({node, ...props}) => <a className="text-blue-400 hover:text-blue-300 underline" {...props} />,
+                                                    // Style paragraphs
+                                                    p: ({node, ...props}) => <p className="my-2" {...props} />,
+                                                    // Style tables
+                                                    table: ({node, ...props}) => <table className="border-collapse border border-gray-600 my-2" {...props} />,
+                                                    thead: ({node, ...props}) => <thead className="bg-gray-700" {...props} />,
+                                                    th: ({node, ...props}) => <th className="border border-gray-600 px-3 py-2 text-left" {...props} />,
+                                                    td: ({node, ...props}) => <td className="border border-gray-600 px-3 py-2" {...props} />,
+                                                }}
+                                            >
+                                                {msg.content}
+                                            </ReactMarkdown>
+                                        )}
                                     </div>
                                 </div>
                             </div>
