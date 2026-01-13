@@ -41,8 +41,8 @@ app.add_middleware(
 
 # 2. Agent Initialization
 # Compile the graph once at API startup
-SELECTED_LANGUAGE_MODEL = LanguageModel.GEMINI_2_5_FLASH
-SELECTED_EMBEDDING_MODEL = EmbeddingModel.GEMINI_EMBEDDING_001
+SELECTED_LANGUAGE_MODEL = LanguageModel.GLM_4_6
+SELECTED_EMBEDDING_MODEL = EmbeddingModel.MISTRAL_EMBEDDING_5
 
 try:
     AGENT_APP = create_research_langgraph(ALL_TOOLS, SELECTED_LANGUAGE_MODEL)
@@ -251,15 +251,23 @@ async def upload_document(file: UploadFile = File(...)):
         # Save the uploaded file
         with open(file_path, "wb") as buffer:
             shutil.copyfileobj(file.file, buffer)
+    except Exception as e:
+        print(f"[UPLOAD ERROR] Failed to save file: {str(e)}")
+        raise HTTPException(status_code=500, detail=str(e))
 
-        print(f"[UPLOAD] File saved successfully, starting indexing...")
+    print(f"[UPLOAD] File saved successfully, starting indexing...")
 
+    try:
         # Process and index the PDF
         relative_path = os.path.join("pdfs", file.filename)
         result = document_manager.process_and_index_pdf(
             relative_path, None
         )  # TODO add metadata
+    except Exception as e:
+        print(f"[UPLOAD ERROR] Failed to index document: {str(e)}")
+        raise HTTPException(status_code=500, detail=str(e))
 
+    try:
         if result.get("count", 0) > 0:
             document_manager.save_index()
 

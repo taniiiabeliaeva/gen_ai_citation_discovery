@@ -23,7 +23,11 @@ class DocumentManager:
 
         self.vector_store = FAISS(
             embedding_function=self.embeddings,
-            index=faiss.IndexFlatL2(3072),
+            # This is hard coded and different for Gemini...
+            # We need different vector sizes for each.
+            # Gemini was 3072.
+            # Each model would require a different store. What should we settle for
+            index=faiss.IndexFlatL2(4096),
             docstore=InMemoryDocstore(),
             index_to_docstore_id={},
         )
@@ -104,11 +108,8 @@ class DocumentManager:
                     )
 
                 # Read PDF
-                try:
-                    loader = PyMuPDFLoader(resolved_path)
-                    docs = loader.load()
-                except Exception as e:
-                    raise Exception(f"Failed to load PDF: {str(e)}")
+                loader = PyMuPDFLoader(resolved_path)
+                docs = loader.load()
 
                 resolved_abs = os.path.abspath(resolved_path)
                 data_dir_abs = os.path.abspath(self.DATA_DIR)
@@ -124,6 +125,7 @@ class DocumentManager:
                             else normalized_input_path
                         )
                 except ValueError:
+                    print("ValueError in commonpath check")
                     effective_file_path = (
                         resolved_abs
                         if os.path.isabs(normalized_input_path)
@@ -153,7 +155,10 @@ class DocumentManager:
                 chunks = text_splitter.split_documents(docs)
 
                 # Add to vector store
-                self.vector_store.add_documents(chunks)
+                try:
+                    self.vector_store.add_documents(chunks)
+                except Exception as e:
+                    raise RuntimeError(f"Failed to add documents to vector store: {e}")
 
                 indexed_files.append(effective_file_path)
                 self._indexed_file_paths.add(effective_file_path)
@@ -165,6 +170,7 @@ class DocumentManager:
             }
 
         else:
+            print("[DocumentManager] Indexing document with title and abstract only.")
             doc = Document(
                 page_content=metadata.get("title", "")
                 + " "

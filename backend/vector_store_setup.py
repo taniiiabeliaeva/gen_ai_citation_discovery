@@ -5,7 +5,7 @@ from dotenv import load_dotenv
 from argparse import ArgumentParser
 import shutil
 from vectordb_utils.document_manager import DocumentManager
-
+from llm.model import EmbeddingModel
 
 def parse_args():
     parser = ArgumentParser()
@@ -34,7 +34,7 @@ def setup_environment_and_create_vector_store(test=False):
             f"CSV file not found at {CSV_FILE_PATH}. Please run setup scripts first."
         )
 
-    document_manager = DocumentManager(google_api_key=os.getenv("GOOGLE_API_KEY"))
+    document_manager = DocumentManager(EmbeddingModel.MISTRAL_EMBEDDING_5)
     df = pd.read_csv(CSV_FILE_PATH)
 
     if test:
