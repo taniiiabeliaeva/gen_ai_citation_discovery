@@ -61,6 +61,10 @@ def get_model_instance(model: Model) -> BaseChatModel | Embeddings:
                 base_url="https://aqueduct.ai.datalab.tuwien.ac.at",
                 api_key=SecretStr(model.key),
                 timeout=295.0,
+                # Disable length check. That enables the text to be sent as a normal string.
+                # By default, LangChain tokenizes your text to make sure it isn't "too long" for the model.
+                # Disabling this stops the conversion to those numbers you saw in the logs and sends the raw string instead.
+                check_embedding_ctx_length=False
             )
         case _:
             raise ValueError(f"Unsupported model: {model}")
