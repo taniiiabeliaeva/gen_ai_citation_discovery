@@ -502,7 +502,127 @@ OUTPUT FORMAT:
     response = llm.invoke(comparison_prompt)
     return response.content
 
+@tool
+def verify_claim(claim: str, file_paths: str = None) -> str:
+    """
+    Verifies whether a specific claim is supported, contradicted, or not addressed
+    by the indexed academic papers.
 
+    Use this tool when the user asks:
+    - "Is this claim supported by the literature?"
+    - "Do papers agree that X is true?"
+    - "Verify the following statement..."
+
+    Args:
+        claim: The claim or statement to verify.
+        file_paths: (Optional) Comma-separated list of paper file paths to restrict verification.
+
+    Returns:
+        A structured verification result with evidence and citations.
+    """
+
+    print(f"\n[CLAIM VERIFICATION TOOL] Verifying claim: '{claim}'")
+
+    relevant_docs = []
+
+    # -----------------------------
+    # MODE 1: Restrict to given papers
+    # -----------------------------
+    if file_paths:
+        paths_list = [p.strip() for p in file_paths.split(",") if p.strip()]
+        print(f"[CLAIM VERIFICATION TOOL] Restricting to {len(paths_list)} file(s)")
+
+        for path in paths_list:
+            canonical_path = _canonicalize_file_path(path)
+            retriever = _get_vector_store().as_retriever(
+                search_kwargs={"k": 5, "filter": {"file_path": canonical_path}}
+            )
+            docs = retriever.invoke(claim)
+            relevant_docs.extend(docs)
+
+    # -----------------------------
+    # MODE 2: Search entire database
+    # -----------------------------
+    else:
+        print("[CLAIM VERIFICATION TOOL] Searching entire document collection")
+        retriever = _get_vector_store().as_retriever(search_kwargs={"k": 10})
+        relevant_docs = retriever.invoke(claim)
+
+    if not relevant_docs:
+        return (
+            "No relevant evidence found in the indexed papers to verify this claim. "
+            "The claim may not be discussed in the available documents."
+        )
+
+    # -----------------------------
+    # Build context with citations
+    # -----------------------------
+    context_blocks = []
+    sources = set()
+
+    for doc in relevant_docs:
+        title = doc.metadata.get("title", "Untitled")
+        source = doc.metadata.get("source") or doc.metadata.get("file_path")
+        excerpt = doc.page_content
+
+        sources.add((title, source))
+        context_blocks.append(
+            f"Paper: {title}\nSource: {source}\nExcerpt:\n{excerpt}"
+        )
+
+    context_str = "\n\n---\n\n".join(context_blocks)
+
+    source_list = "\n".join(
+        [f"- {t} ({s})" for t, s in sources]
+    )
+
+    # -----------------------------
+    # LLM classification prompt
+    # -----------------------------
+    verification_prompt = f"""
+You are an academic fact-checking assistant.
+
+Your task is to verify the following CLAIM based ONLY on the provided CONTEXT
+from academic papers.
+
+CLAIM:
+"{claim}"
+
+CONTEXT:
+---
+{context_str}
+---
+
+INSTRUCTIONS:
+1. Determine whether the claim is:
+   - SUPPORTED by the literature
+   - CONTRADICTED by the literature
+   - INCONCLUSIVE / NOT ADDRESSED
+2. Quote or paraphrase concrete evidence from the context.
+3. Cite which papers support or contradict the claim.
+4. Do NOT use outside knowledge.
+5. If evidence is mixed, explain the disagreement.
+
+OUTPUT FORMAT:
+
+## Claim Verification Result
+
+**Verdict:** Supported / Contradicted / Inconclusive
+
+**Evidence Analysis:**
+- Supporting evidence: ...
+- Contradicting evidence: ...
+
+**Conclusion:**
+A short, clear conclusion about the claim's validity.
+"""
+
+    response = _LLM_INSTANCE.invoke(verification_prompt).content
+
+    return f"{response}\n\n--- SOURCES USED ---\n{source_list}"
+
+
+ALL_RAG_TOOLS.append(verify_claim)
 ALL_RAG_TOOLS.append(query_paper_for_answer)
 ALL_RAG_TOOLS.append(generate_research_ideas)
 ALL_RAG_TOOLS.append(answer_general_question)

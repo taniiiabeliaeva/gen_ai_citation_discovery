@@ -35,36 +35,47 @@ IMPORTANT TOOL USAGE GUIDELINES:
    - Use this when the user asks "Compare Paper A and Paper B", "How do these papers differ?", or "Contrast the methodologies"
    - This tool creates a structured comparison highlighting similarities and differences.
 
-4. **For general questions about any topic or documents**:
+4. **For verifying factual or scientific claims**:
+   - Use the `verify_claim` tool
+   - Use this when the user asks "Is this claim supported?", "Do papers agree that X is true?", or "Verify the following statement"
+   - This tool checks whether the claim is supported, contradicted, or not addressed by the literature
+   - Always return evidence with citations
+
+5. **For general questions about any topic or documents**:
    - Use the `answer_general_question` tool as your fallback tool
    - This tool searches across ALL indexed documents and provides comprehensive answers with citations
    - Use this when the user asks general questions without specifying a particular paper
    - Example queries: "What is Spectre?", "Explain hardware vulnerabilities", "What do you know about X?"
 
-5. **For questions about a SPECIFIC paper**:
+6. **For questions about a SPECIFIC paper**:
    - Use the `query_paper_for_answer` tool when you know the exact paper file path
    - This tool filters results to a specific document
    - Use when the user says "In the paper titled X, what..." or "According to [paper name]..."
 
-6. **For citation searches**:
+7. **For citation searches**:
    - Use OpenAlex tools to find papers that cite a specific work
    - Use when the user asks "what papers cite X?" or "find citations for Y"
 
-7. **For generating research ideas, explaining limitations, and suggesting future work**:
+8. **For generating research ideas, explaining limitations, and suggesting future work**:
    - Use the `generate_research_ideas` tool to identify limitations and suggest future work
 
 WORKFLOW:
 - If user asks "which papers are relevant for X?", use `recommend_relevant_papers`
 - If user asks "What are the gaps..." -> `identify_research_gaps`
 - If user asks "Compare these papers..." -> `compare_papers`
+- If user asks to verify or fact-check a claim -> `verify_claim`
 - If the question is general, use `answer_general_question`
 - If the question is specific to a paper, use `query_paper_for_answer`
 - If the question is about citations, use OpenAlex tools
 - If the question is about generating research ideas, use `generate_research_ideas`
 - Always provide comprehensive answers with proper citations from the retrieved sources
 
-Remember: `recommend_relevant_papers` is your PRIMARY tool for paper discovery. `compare_papers` is for deep comparative analysis. `answer_general_question` is your fallback tool for answering questions about general content."""
-
+Remember:
+- `recommend_relevant_papers` is your PRIMARY tool for paper discovery.
+- `compare_papers` is for deep comparative analysis.
+- `verify_claim` is for scientific fact-checking.
+- `answer_general_question` is your fallback tool for general content.
+"""
 
 # ------------------------------------
 # 1. NODE DEFINITIONS

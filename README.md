@@ -49,6 +49,10 @@ Users can ask:
   - `answer_general_question` - Search across all documents
   - `query_paper_for_answer` - Query specific papers by file path
   - `generate_research_ideas` - Identify limitations and suggest future work
+  - `recommend_relevant_papers` – Suggest papers relevant to a topic
+  - `identify_research_gaps` – Analyze multiple papers to find research gaps
+  - `compare_papers` – Perform comparative analysis of papers on specific aspects
+  - `verify_claim` – Check if a claim is supported, contradicted, or not addressed by indexed papers
 - **OpenAlex Tools**:
   - Search for papers by topic
   - Find citing papers
@@ -133,7 +137,7 @@ Users can ask:
 
 ---
 
-### Phase 2: Research Gap Analysis 🔍
+### Phase 2: Add Tools 🔍
 
 #### 2.1 Gap Detection Tool
 **Tool**: `identify_research_gaps`
@@ -159,36 +163,7 @@ Users can ask:
   - Use LLM to create structured comparison
   - Highlight similarities and differences
 
----
-
-### Phase 3: Contradiction Detection 🔄
-
-#### 3.1 Contradiction Finder Tool
-**Tool**: `find_contradictions`
-- **Purpose**: Identify conflicting claims or findings across papers
-- **Input**: Topic or list of paper file paths
-- **Output**: List of contradictions with evidence from each paper
-- **Implementation**:
-  - Retrieve claims/findings from papers on the same topic
-  - Use LLM to identify contradictory statements
-  - Return structured output:
-    ```python
-    {
-      "contradiction": "Description of the contradiction",
-      "paper_1": {
-        "title": "Paper A",
-        "claim": "Claim from Paper A",
-        "evidence": "Quote or paraphrase"
-      },
-      "paper_2": {
-        "title": "Paper B", 
-        "claim": "Conflicting claim from Paper B",
-        "evidence": "Quote or paraphrase"
-      }
-    }
-    ```
-
-#### 3.2 Claim Verification Tool
+#### 2.3 Claim Verification Tool
 **Tool**: `verify_claim`
 - **Purpose**: Check if a specific claim is supported or contradicted by other papers
 - **Input**: Claim statement, optional paper context
@@ -200,9 +175,9 @@ Users can ask:
 
 ---
 
-### Phase 4: Enhanced User Experience 🎨
+### Phase 3: Enhanced User Experience 🎨
 
-#### 4.1 Frontend Enhancements
+#### 3.1 Frontend Enhancements
 - **Contradiction Highlighting**:
   - Show contradictions in chat with expandable details
   - Link to specific papers and page numbers
@@ -218,22 +193,22 @@ Users can ask:
   - Highlight key differences
   - Export comparison as markdown/PDF
 
-#### 4.2 Export & Reporting
+#### 3.2 Export & Reporting
 - Export research gaps as markdown
 - Generate literature review summaries
 - Create citation networks visualization
 
 ---
 
-### Phase 5: Advanced Features 🚀
+### Phase 4: Advanced Features 🚀
 
-#### 5.1 Citation Network Analysis
+#### 4.1 Citation Network Analysis
 **Tool**: `analyze_citation_network`
 - Build citation graphs using OpenAlex
 - Identify influential papers
 - Find citation clusters
 
-#### 5.2 Multi-Document Synthesis
+#### 4.2 Multi-Document Synthesis
 **Tool**: `synthesize_literature`
 - Generate comprehensive literature reviews
 - Combine findings from multiple papers
@@ -249,9 +224,8 @@ Users can ask:
 3. `identify_research_gaps` tool
 
 ### Medium Priority
-4. `find_contradictions` tool
-5. `compare_papers` tool
-6. Frontend contradiction highlighting
+4. `compare_papers` tool
+5. Frontend contradiction highlighting
 
 ---
 
