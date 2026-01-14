@@ -347,94 +347,155 @@ def identify_research_gaps(topic: str, file_paths: str = None) -> str:
     return response.content
 
 @tool
-def compare_papers(topic: str, file_paths: str = None, aspect: str = "methodology, findings, and limitations") -> str:
+def compare_papers(
+    topic: str,
+    file_paths: str = None,
+    aspect: str = "methodology, findings, and limitations"
+) -> str:
     """
-    Performs a comparative analysis between multiple papers on a specific aspect.
-    
+    Compares multiple academic papers with respect to a given aspect.
+
     Use this tool when the user asks:
-    - "Compare Paper A and Paper B"
-    - "How do these papers differ in their methodology?"
-    - "Contrast the findings of the papers on [topic]"
-    
+    - "Compare these papers"
+    - "How do the approaches differ?"
+    - "Contrast the findings of these works"
+
     Args:
-        topic: The general topic or specific question to guide the comparison (e.g. "transformer architectures").
-        file_paths: (Optional) A comma-separated string of specific file paths to compare. If not provided, the tool searches for relevant papers on the topic.
-        aspect: (Optional) The specific aspect to compare (default: "methodology, findings, and limitations").
-        
+        topic: The topic guiding the comparison.
+        file_paths: Optional comma-separated list of paper file paths.
+        aspect: Aspect to compare (default: methodology, findings, limitations).
+
     Returns:
-        A structured comparison table or analysis.
+        A structured comparative analysis.
     """
-    print(f"\n[COMPARISON TOOL] Comparing papers on aspect: '{aspect}'")
-    
+
+    print(f"\n[COMPARISON TOOL] Topic: '{topic}', Aspect: '{aspect}'")
+
     selected_docs = []
-    
-    # Scenario A: User specified specific files (e.g., selected in frontend)
+
+    # Use a BROAD retriever — comparison needs coverage, not precision
+    retriever = _get_vector_store().as_retriever(search_kwargs={"k": 10})
+
+    # Case 1: User selected specific papers
     if file_paths:
-        paths_list = [p.strip() for p in file_paths.split(',')]
-        print(f"[COMPARISON TOOL] specific files requested: {paths_list}")
-        
+        paths_list = [p.strip() for p in file_paths.split(",") if p.strip()]
+        print(f"[COMPARISON TOOL] Comparing specific files: {paths_list}")
+
+        indexed_paths = set()
+        if _DOCUMENT_MANAGER is not None:
+            indexed_paths = {
+                d.get("file_path", "") for d in _DOCUMENT_MANAGER.list_documents() if d.get("file_path", "")
+            }
+
+        resolved_paths = []
+        missing_paths = []
         for path in paths_list:
             canonical_path = _canonicalize_file_path(path)
-            # Retrieve focused chunks for THIS specific paper
-            retriever = _get_vector_store().as_retriever(
-                search_kwargs={"k": 3, "filter": {"file_path": canonical_path}}
+            candidate_paths = [canonical_path]
+            if canonical_path and not canonical_path.startswith("pdfs/"):
+                candidate_paths.append(_canonicalize_file_path(f"pdfs/{path}"))
+
+            resolved = next((p for p in candidate_paths if p in indexed_paths), None)
+            if not resolved:
+                missing_paths.append(path)
+            else:
+                resolved_paths.append((path, resolved))
+
+        if missing_paths:
+            missing_str = ", ".join(missing_paths)
+            raise ValueError(
+                f"The following file_paths are not indexed and cannot be compared: {missing_str}. "
+                f"Upload/index them first."
             )
-            # We ask specifically about the aspect for this paper
-            docs = retriever.invoke(f"{aspect} in {topic}")
-            if docs:
-                # Tag these chunks with the filename so the LLM knows which paper is which
-                content_str = "\n".join([d.page_content for d in docs])
-                selected_docs.append(f"PAPER: {path}\nCONTENT:\n{content_str}")
-    
-    # Scenario B: User just gave a topic, find the most relevant ones to compare
+
+        retrieval_query = f"{topic}\n\nFocus on: {aspect}"
+        for original_path, canonical_path in resolved_paths:
+            per_paper_retriever = _get_vector_store().as_retriever(
+                search_kwargs={"k": 10, "filter": {"file_path": canonical_path}}
+            )
+            docs = per_paper_retriever.invoke(retrieval_query)
+            print(f"[DEBUG] Retrieved {len(docs)} chunks for {original_path} (canonical: {canonical_path})")
+
+            if not docs:
+                selected_docs.append(
+                    f"PAPER: {original_path} ({canonical_path})\nCONTENT:\n(No relevant chunks retrieved)"
+                )
+                continue
+
+            content = "\n".join([d.page_content for d in docs[:5]])
+            title = docs[0].metadata.get("title") if docs else None
+            paper_label = f"{title} ({canonical_path})" if title else f"{original_path} ({canonical_path})"
+            selected_docs.append(
+                f"PAPER: {paper_label}\nCONTENT:\n{content}"
+            )
+
+    # Case 2: No specific papers → compare most relevant ones
     else:
-        print(f"[COMPARISON TOOL] Searching for papers relevant to: {topic}")
-        retriever = _get_vector_store().as_retriever(search_kwargs={"k": 8})
-        docs = retriever.invoke(f"{topic} {aspect}")
-        
-        # Group chunks by paper title/source to organize input for LLM
-        grouped_content = {}
+        print("[COMPARISON TOOL] Finding relevant papers automatically")
+
+        docs = retriever.invoke(topic)
+
+        grouped = {}
         for doc in docs:
             source = doc.metadata.get("title") or doc.metadata.get("source", "Unknown Paper")
-            if source not in grouped_content:
-                grouped_content[source] = []
-            grouped_content[source].append(doc.page_content)
-            
-        for source, contents in grouped_content.items():
-            content_str = "\n".join(contents)
-            selected_docs.append(f"PAPER: {source}\nCONTENT:\n{content_str}")
+            grouped.setdefault(source, []).append(doc.page_content)
+
+        for source, contents in list(grouped.items())[:3]:
+            content = "\n".join(contents[:5])
+            selected_docs.append(
+                f"PAPER: {source}\nCONTENT:\n{content}"
+            )
 
     if not selected_docs:
-        return "Not enough information found to perform a comparison. Please upload more documents or specify a broader topic."
+        return "Not enough information found to compare the papers."
 
-    # 3. LLM Synthesis
     context_str = "\n\n====================\n\n".join(selected_docs)
-    
-    comparison_prompt = f"""
-    You are an expert research analyst. Perform a comparative analysis of the following papers regarding: "{aspect}".
-    
-    INPUT CONTEXT:
-    {context_str}
-    
-    INSTRUCTIONS:
-    1. Identify the key approaches, findings, or claims for EACH paper regarding '{aspect}'.
-    2. Highlight the **Similarities** (where do they agree?).
-    3. Highlight the **Differences** (where do they diverge?).
-    4. Create a comparison table in Markdown format if appropriate.
-    5. Be specific. Do not generalize. Cite the paper titles/filenames.
-    
-    OUTPUT FORMAT:
-    ## Comparative Analysis: {aspect}
-    
-    [Detailed text analysis]
-    
-    ### Comparison Table
-    | Paper | Approach | Key Findings |
-    |-------|----------|--------------|
-    | ...   | ...      | ...          |
-    """
 
-    response = _LLM_INSTANCE.invoke(comparison_prompt)
+    # LLM: low temperature for factual comparison
+    llm = _LLM_INSTANCE
+    if llm is None:
+        llm = ChatGoogleGenerativeAI(
+            model="gemini-2.5-flash",
+            temperature=0.1
+        )
+
+    comparison_prompt = f"""
+You are an academic research assistant.
+
+Compare the following papers with respect to:
+"{aspect}"
+
+CONTEXT:
+{context_str}
+
+INSTRUCTIONS:
+1. Summarize each paper's approach related to '{aspect}'.
+2. Identify similarities between the papers.
+3. Identify key differences.
+4. Present the result clearly.
+5. If information is missing, state this explicitly.
+
+OUTPUT FORMAT:
+
+## Comparative Analysis: {aspect}
+
+### Paper Summaries
+- Paper A: ...
+- Paper B: ...
+
+### Similarities
+- ...
+
+### Differences
+- ...
+
+### Comparison Table
+| Paper | Approach | Key Findings | Limitations |
+|------|----------|--------------|-------------|
+| ...  | ...      | ...          | ...         |
+"""
+
+    response = llm.invoke(comparison_prompt)
     return response.content
 
 
