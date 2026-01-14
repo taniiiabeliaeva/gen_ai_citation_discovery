@@ -7,6 +7,7 @@ from dotenv import load_dotenv
 import os
 import shutil
 import uvicorn
+import re
 
 # Import your compiled LangGraph components and tools
 from core.agent import create_research_langgraph
@@ -155,9 +156,12 @@ async def chat_stream(session_id: str, prompt: str):
                                                 "file_path" in paper
                                                 and "relevance_score" in paper
                                             ):
-                                                scores[paper["file_path"]] = paper[
-                                                    "relevance_score"
-                                                ]
+                                                key = paper["file_path"]
+                                                try:
+                                                    key = document_manager._canonicalize_file_path(key)
+                                                except Exception:
+                                                    pass
+                                                scores[key] = paper["relevance_score"]
 
                                         tool_metadata["recommendations"] = {
                                             "topic": tool_result.get("topic"),
@@ -187,23 +191,6 @@ async def chat_stream(session_id: str, prompt: str):
 
                                 # Only send non-empty content
                                 if content and isinstance(content, str):
-                                    if (
-                                        rag_sources_text
-                                        and "--- SOURCES USED ---" not in content
-                                    ):
-                                        content = (
-                                            f"{content}\n\n--- SOURCES USED ---\n{rag_sources_text}"
-                                        )
-                                        rag_sources_text = None
-
-                                    if (
-                                        recommended_papers_text
-                                        and "--- RECOMMENDED PAPERS ---" not in content
-                                    ):
-                                        content = (
-                                            f"{content}\n\n--- RECOMMENDED PAPERS ---\n{recommended_papers_text}"
-                                        )
-                                        recommended_papers_text = None
 
                                     print(
                                         f"[STREAMING] Sending content to client (length: {len(content)} chars)"

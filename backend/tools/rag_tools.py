@@ -216,37 +216,41 @@ def recommend_relevant_papers(topic: str, num_papers: int = 10) -> str:
     print(f"\n[RECOMMEND TOOL] Searching for papers on topic: {topic}")
     print(f"[RECOMMEND TOOL] Requesting top {num_papers} papers")
 
-    # Use similarity search to find relevant documents
-    retriever = _get_vector_store().as_retriever(search_kwargs={"k": num_papers})
+    # Use similarity search with scores (FAISS IndexFlatL2 → lower distance = more similar)
+    results = _get_vector_store().similarity_search_with_score(topic, k=num_papers)
 
-    # Perform search
-    relevant_docs = retriever.invoke(topic)
-
-    if not relevant_docs:
+    if not results:
         return "No papers found matching the topic. Please try a different query or upload more documents."
 
-    print(f"[RECOMMEND TOOL] Found {len(relevant_docs)} relevant documents")
+    print(f"[RECOMMEND TOOL] Found {len(results)} relevant chunks")
 
-    # Extract unique papers with scores
+    # Extract unique papers, keeping best (lowest) distance per paper
     papers_dict = {}
-    for doc in relevant_docs:
-        file_path = doc.metadata.get("source") or doc.metadata.get("file_path")
+    for doc, distance in results:
+        file_path = doc.metadata.get("file_path") or doc.metadata.get("source")
+        if file_path:
+            file_path = _canonicalize_file_path(file_path)
         title = doc.metadata.get("title", "Untitled")
 
-        # Calculate relevance score (normalized similarity)
-        # Note: FAISS returns documents in order of relevance
-        # We'll assign scores based on position (first = highest)
-        if file_path not in papers_dict:
-            position = len(papers_dict)
-            # Score from 1.0 (first) to 0.5 (last)
-            score = 1.0 - (position / (num_papers * 2))
+        if not file_path:
+            continue
+
+        existing = papers_dict.get(file_path)
+        if existing is None or distance < existing["_distance"]:
             papers_dict[file_path] = {
                 "title": title,
                 "file_path": file_path,
-                "relevance_score": round(score, 2),
+                "_distance": float(distance),
             }
 
-    # Convert to list and sort by score
+    # Convert distances to relevance scores using inverse method
+    # Distance 0 → score 1.0, larger distances → score approaches 0 (but never reaches it)
+    for paper in papers_dict.values():
+        score = 1 / (1 + paper["_distance"])
+        paper["relevance_score"] = round(float(score), 3)
+        paper.pop("_distance", None)
+
+    # Convert to list and sort by relevance score (higher is better)
     papers_list = list(papers_dict.values())
     papers_list.sort(key=lambda x: x["relevance_score"], reverse=True)
 

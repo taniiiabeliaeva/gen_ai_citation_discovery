@@ -92,13 +92,17 @@ export default function DocumentExplorer({ onDocumentSelect, selectedDocIds = []
     };
 
     const getRelevanceScore = (filePath) => {
-        return relevanceScores[filePath] || 0;
+        const score = relevanceScores[filePath];
+        if (score === undefined || score === null) return null;
+        const numeric = Number(score);
+        return Number.isFinite(numeric) ? numeric : null;
     };
 
     const getRelevanceBadge = (score) => {
+        if (score === null) return null;
         if (score >= 0.8) return { color: 'bg-green-500', label: 'High', emoji: '🟢' };
         if (score >= 0.5) return { color: 'bg-yellow-500', label: 'Medium', emoji: '🟡' };
-        if (score > 0) return { color: 'bg-gray-500', label: 'Low', emoji: '⚪' };
+        if (score < 0.5) return { color: 'bg-gray-500', label: 'Low', emoji: '⚪' };
         return null;
     };
 
@@ -108,7 +112,9 @@ export default function DocumentExplorer({ onDocumentSelect, selectedDocIds = []
             return docs.sort((a, b) => {
                 const scoreA = getRelevanceScore(a.file_path);
                 const scoreB = getRelevanceScore(b.file_path);
-                return scoreB - scoreA; // Descending order
+                const aVal = scoreA === null ? Number.NEGATIVE_INFINITY : scoreA;
+                const bVal = scoreB === null ? Number.NEGATIVE_INFINITY : scoreB;
+                return bVal - aVal; // Descending relevance (higher is better)
             });
         }
         return docs; // Default: by name (as returned from API)
@@ -201,7 +207,6 @@ export default function DocumentExplorer({ onDocumentSelect, selectedDocIds = []
                                             {badge && (
                                                 <div className="flex items-center gap-1">
                                                     <span className="text-sm">{badge.emoji}</span>
-                                                    <span className="text-xs text-gray-400">{score.toFixed(2)}</span>
                                                 </div>
                                             )}
                                         </div>
