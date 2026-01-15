@@ -41,18 +41,18 @@ app.add_middleware(
 # 2. Agent Initialization
 # Compile the graph once at API startup
 SELECTED_LANGUAGE_MODEL = LanguageModel.GEMINI_2_5_FLASH
-SELECTED_EMBEDDING_MODEL = EmbeddingModel.GEMINI_EMBEDDING_001
 
-# Model presets: matching language model with embedding model
+# Fixed embedding model for all documents (TU Wien Mistral)
+EMBEDDING_MODEL = EmbeddingModel.MISTRAL_EMBEDDING_5
+
+# Model presets: different language models for text generation
 MODEL_PRESETS = {
     "tuwien": {
         "language_model": LanguageModel.GLM_4_6,
-        "embedding_model": EmbeddingModel.MISTRAL_EMBEDDING_5,
-        "display_name": "TU Wien (GLM-4.6 + Mistral)"
+        "display_name": "TU Wien GLM-4.6"
     },
     "gemini": {
         "language_model": LanguageModel.GEMINI_2_5_FLASH,
-        "embedding_model": EmbeddingModel.GEMINI_EMBEDDING_001,
         "display_name": "Google Gemini 2.5 Flash"
     }
 }
@@ -63,7 +63,8 @@ except Exception as e:
     print(f"FATAL: Could not initialize LangGraph agent: {e}")
     AGENT_APP = None
 
-document_manager = DocumentManager(SELECTED_EMBEDDING_MODEL)
+# Initialize document manager with fixed TU Wien embedding model
+document_manager = DocumentManager(EMBEDDING_MODEL)
 
 # Set LLM and DocumentManager for RAG tools
 tools_set_llm(SELECTED_LANGUAGE_MODEL)
@@ -98,8 +99,8 @@ def get_models():
 
 @app.post("/api/models/switch/{preset_name}")
 def switch_model(preset_name: str):
-    """Switch to a different model preset."""
-    global AGENT_APP, document_manager, SELECTED_LANGUAGE_MODEL, SELECTED_EMBEDDING_MODEL, CURRENT_MODEL_PRESET, CHAT_HISTORY
+    """Switch to a different text generation model preset."""
+    global AGENT_APP, SELECTED_LANGUAGE_MODEL, CURRENT_MODEL_PRESET, CHAT_HISTORY
 
     print(f"\n[API REQUEST] POST /api/models/switch/{preset_name}")
 
@@ -113,26 +114,20 @@ def switch_model(preset_name: str):
     try:
         preset = MODEL_PRESETS[preset_name]
         new_language_model = preset["language_model"]
-        new_embedding_model = preset["embedding_model"]
 
         print(f"[MODEL SWITCH] Switching to {preset['display_name']}")
         print(f"[MODEL SWITCH] Language Model: {new_language_model.value}")
-        print(f"[MODEL SWITCH] Embedding Model: {new_embedding_model.value}")
+        print(f"[MODEL SWITCH] Embedding Model: {EMBEDDING_MODEL.value} (fixed)")
 
         # Reinitialize agent with new language model
         AGENT_APP = create_research_langgraph(ALL_TOOLS, new_language_model)
 
-        # Reinitialize document manager with new embedding model
-        document_manager = DocumentManager(new_embedding_model)
-
-        # Update global settings
+        # Update global language model
         SELECTED_LANGUAGE_MODEL = new_language_model
-        SELECTED_EMBEDDING_MODEL = new_embedding_model
         CURRENT_MODEL_PRESET = preset_name
 
-        # Reset RAG tools with new instances
+        # Update RAG tools with new language model (document manager stays the same)
         tools_set_llm(new_language_model)
-        tools_set_document_manager(document_manager)
 
         # Clear chat history as context may not be compatible
         CHAT_HISTORY.clear()
