@@ -40,10 +40,11 @@ app.add_middleware(
 
 # 2. Agent Initialization
 # Compile the graph once at API startup
-SELECTED_LANGUAGE_MODEL = LanguageModel.GEMINI_2_5_FLASH
-
-# Fixed embedding model for all documents (TU Wien Mistral)
+# Fixed embedding model for all documents (TU Wien Mistral - never changes)
 EMBEDDING_MODEL = EmbeddingModel.MISTRAL_EMBEDDING_5
+
+# Default language model (start with TU Wien)
+SELECTED_LANGUAGE_MODEL = LanguageModel.GLM_4_6
 
 # Model presets: different language models for text generation
 MODEL_PRESETS = {
@@ -72,7 +73,7 @@ tools_set_document_manager(document_manager)
 
 CHAT_HISTORY = {}
 MAX_HISTORY_MESSAGES = 20
-CURRENT_MODEL_PRESET = "gemini"  # Default to Gemini
+CURRENT_MODEL_PRESET = "tuwien"  # Default to TU Wien
 
 
 def _format_sse_data(data: str) -> str:
