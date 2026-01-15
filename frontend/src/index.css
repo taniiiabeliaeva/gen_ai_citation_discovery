@@ -104,3 +104,13 @@ button:focus-visible {
   word-break: break-all;
   overflow-wrap: anywhere;
 }
+
+/* Hide scrollbar completely */
+.scrollbar-hide {
+  -ms-overflow-style: none;  /* IE and Edge */
+  scrollbar-width: none;  /* Firefox */
+}
+
+.scrollbar-hide::-webkit-scrollbar {
+  display: none;  /* Chrome, Safari, Opera */
+}

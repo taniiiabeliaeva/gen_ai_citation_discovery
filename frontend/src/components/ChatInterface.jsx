@@ -409,11 +409,11 @@ export default function ChatInterface({ selectedDocIds = [], selectedText = '', 
                             onChange={handleInputChange}
                             onKeyDown={handleShiftPlusEnter}
                             placeholder="Ask a research question..."
-                            className="w-full bg-gray-800 text-white border border-gray-700 rounded-xl pl-5 pr-18 py-3.5 focus:outline-none focus:ring-2 focus:ring-blue-500/50 focus:border-blue-500 transition-all placeholder-gray-500 resize-none"
+                            className="w-full bg-gray-800 text-white border border-gray-700 rounded-xl pl-5 pr-14 py-3.5 focus:outline-none focus:ring-2 focus:ring-blue-500/50 focus:border-blue-500 transition-all placeholder-gray-500 resize-none scrollbar-hide"
                             disabled={isLoading}
                             rows="1"
                             style={{
-                                overflow: 'auto',
+                                overflow: 'hidden',
                             }}
                             onInput={(e) => {
                                 e.target.style.height = 'auto';
@@ -434,7 +434,7 @@ export default function ChatInterface({ selectedDocIds = [], selectedText = '', 
                         <button
                             type="submit"
                             disabled={!input.trim() || isLoading}
-                            className="absolute right-2 top-2 p-2 bg-blue-600 hover:bg-blue-500 text-white rounded-lg disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
+                            className="absolute right-2 top-2 p-2 bg-blue-600 hover:bg-blue-500 text-white rounded-lg disabled:opacity-50 disabled:cursor-not-allowed transition-colors shadow-lg"
                         >
                             <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="currentColor" className="w-5 h-5">
                                 <path d="M3.478 2.405a.75.75 0 00-.926.94l2.432 7.905H13.5a.75.75 0 010 1.5H4.984l-2.432 7.905a.75.75 0 00.926.94 60.519 60.519 0 0018.445-8.986.75.75 0 000-1.218A60.517 60.517 0 003.478 2.405z" />
