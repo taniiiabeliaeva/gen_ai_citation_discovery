@@ -23,6 +23,13 @@ export default function ChatInterface({ selectedDocIds = [], selectedText = '', 
         messagesEndRef.current?.scrollIntoView({ behavior: "smooth" });
     };
 
+    // Preprocess content to convert section headers to proper markdown headings
+    const preprocessMarkdown = (content) => {
+        // Convert "--- SECTION NAME ---" to a horizontal rule followed by heading
+        // This creates a visual separator before each section
+        return content.replace(/^---\s+([A-Z\s]+)\s+---$/gm, '\n---\n\n### $1');
+    };
+
     useEffect(() => {
         scrollToBottom();
     }, [messages]);
@@ -329,23 +336,28 @@ export default function ChatInterface({ selectedDocIds = [], selectedText = '', 
                                                     // Style headings
                                                     h1: ({node, ...props}) => <h1 className="text-xl font-bold mt-4 mb-2" {...props} />,
                                                     h2: ({node, ...props}) => <h2 className="text-lg font-semibold mt-3 mb-2" {...props} />,
-                                                    h3: ({node, ...props}) => <h3 className="text-base font-semibold mt-2 mb-1" {...props} />,
+                                                    h3: ({node, ...props}) => <h3 className="text-base font-bold mt-3 mb-3 text-gray-100 uppercase tracking-wide" {...props} />,
                                                     // Style lists
                                                     ul: ({node, ...props}) => <ul className="list-disc list-inside my-2 space-y-1" {...props} />,
                                                     ol: ({node, ...props}) => <ol className="list-decimal list-inside my-2 space-y-1" {...props} />,
-                                                    li: ({node, ...props}) => <li className="ml-2" {...props} />,
+                                                    li: ({node, ...props}) => <li className="ml-2 break-all" style={{ overflowWrap: 'anywhere' }} {...props} />,
                                                     // Style code
                                                     code: ({node, inline, ...props}) => 
                                                         inline ? (
-                                                            <code className="bg-gray-700 px-1.5 py-0.5 rounded text-sm" {...props} />
+                                                            <code className="bg-gray-700 px-1.5 py-0.5 rounded text-sm break-all" style={{ overflowWrap: 'anywhere' }} {...props} />
                                                         ) : (
                                                             <code className="block bg-gray-700 p-3 rounded-lg my-2 overflow-x-auto text-sm" {...props} />
                                                         ),
                                                     pre: ({node, ...props}) => <pre className="bg-gray-700 rounded-lg my-2 overflow-x-auto" {...props} />,
                                                     // Style blockquotes
                                                     blockquote: ({node, ...props}) => <blockquote className="border-l-4 border-gray-600 pl-4 italic my-2" {...props} />,
+                                                    // Style horizontal rules (thematic breaks) - used for section dividers
+                                                    hr: ({node, ...props}) => {
+                                                        // Full-width prominent divider for sections
+                                                        return <hr className="border-t border-gray-600 my-6 -mx-5" style={{ borderTopWidth: '1px' }} {...props} />;
+                                                    },
                                                     // Style links
-                                                    a: ({node, ...props}) => <a className="text-blue-400 hover:text-blue-300 underline" {...props} />,
+                                                    a: ({node, ...props}) => <a className="text-blue-400 hover:text-blue-300 underline break-all" style={{ overflowWrap: 'anywhere' }} {...props} />,
                                                     // Style paragraphs
                                                     p: ({node, ...props}) => <p className="my-2" {...props} />,
                                                     // Style tables
@@ -355,7 +367,7 @@ export default function ChatInterface({ selectedDocIds = [], selectedText = '', 
                                                     td: ({node, ...props}) => <td className="border border-gray-600 px-3 py-2" {...props} />,
                                                 }}
                                             >
-                                                {msg.content}
+                                                {preprocessMarkdown(msg.content)}
                                             </ReactMarkdown>
                                         )}
                                     </div>
