@@ -194,7 +194,7 @@ export default function DocumentExplorer({ onDocumentSelect, selectedDocIds = []
                                     {/* Document Info */}
                                     <div className="flex-1 min-w-0">
                                         <div className="flex items-center gap-2">
-                                            <div className="text-sm font-medium text-gray-200 flex-1" title={doc.title}>
+                                            <div className="text-sm font-medium text-gray-200 flex-1 break-all" style={{ wordBreak: 'break-word', overflowWrap: 'anywhere' }} title={doc.title}>
                                                 {doc.title || 'Untitled'}
                                             </div>
                                             {/* Relevance Badge */}

@@ -314,11 +314,11 @@ export default function ChatInterface({ selectedDocIds = [], selectedText = '', 
                                 >
                                     {/* Show selected papers if any */}
                                     {msg.selectedDocs && msg.selectedDocs.length > 0 && (
-                                        <div className="text-xs opacity-70 mb-2 pb-2 border-b border-white/20">
+                                        <div className="text-xs opacity-70 mb-2 pb-2 border-b border-white/20 break-all" style={{ overflowWrap: 'anywhere' }}>
                                             📄 {msg.selectedDocs.map(getPaperTitle).join(', ')}
                                         </div>
                                     )}
-                                    <div className={`leading-relaxed text-[0.95rem] ${msg.role === 'user' ? 'whitespace-pre-wrap' : 'markdown-content'}`}>
+                                    <div className={`leading-relaxed text-[0.95rem] ${msg.role === 'user' ? 'whitespace-pre-wrap break-all' : 'markdown-content'}`} style={{ overflowWrap: 'anywhere' }}>
                                         {msg.role === 'user' ? (
                                             msg.content
                                         ) : (
