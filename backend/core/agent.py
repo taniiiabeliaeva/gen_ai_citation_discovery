@@ -52,12 +52,43 @@ IMPORTANT TOOL USAGE GUIDELINES:
    - This tool filters results to a specific document
    - Use when the user says "In the paper titled X, what..." or "According to [paper name]..."
 
-7. **For citation searches**:
-   - Use OpenAlex tools to find papers that cite a specific work
-   - Use when the user asks "what papers cite X?" or "find citations for Y"
-
-8. **For generating research ideas, explaining limitations, and suggesting future work**:
+7. **For generating research ideas, explaining limitations, and suggesting future work**:
    - Use the `generate_research_ideas` tool to identify limitations and suggest future work
+
+8. **For OpenAlex citation discovery and bibliographic queries**:
+   - Use `get_citation_details` to get the citation details for a paper
+   - Use `get_cited_works` to find papers that CITE a specific work (forward citations)
+   - Use `get_referenced_works` to find papers that are REFERENCED BY a specific work (backward citations/bibliography)
+   - Use `find_related_works` to discover papers related to a specific work
+   - These tools require a paper title or search term from your indexed papers
+   - Use when the user asks about citations, references, or related academic works
+
+OPENALEX TOOLS USAGE GUIDE:
+
+The search term has to be a paper title.
+
+**`get_citation_details(search_term: str)`**:
+- Returns the citation details for a paper
+- Use when: "Get the citation for X", "How do I cite Y?"
+- Example: `get_citation_details("paper title")`
+
+**`get_cited_works(search_term: str, limit: int = 5)`**:
+- Finds papers that CITE the specified work (forward citations)
+- Returns structured list with titles, authors, publication years, OpenAlex IDs, DOIs
+- Use when: "What papers cite X?", "Who has cited Y?", "Find citations of Z"
+- Example: `get_cited_works("paper title", limit=10)`
+
+**`get_referenced_works(search_term: str, limit: int = 5)`**:
+- Finds papers that are REFERENCED BY the specified work (bibliography/backward citations)
+- Returns structured list with titles, authors, publication years, OpenAlex IDs, DOIs
+- Use when: "What papers does X reference?", "What is in Y's bibliography?", "What sources does Z cite?"
+- Example: `get_referenced_works("paper title", limit=10)`
+
+**`find_related_works(search_term: str, limit: int = 5)`**:
+- Finds papers related to the specified work based on OpenAlex's similarity algorithm
+- Returns structured list with titles, authors, publication years, OpenAlex IDs, DOIs
+- Use when: "Find papers similar to X", "What papers are related to Y?", "Show me work like Z"
+- Example: `find_related_works("Spectre Attacks", limit=10)`
 
 WORKFLOW:
 - If user asks "which papers are relevant for X?", use `recommend_relevant_papers`
@@ -66,7 +97,11 @@ WORKFLOW:
 - If user asks to verify or fact-check a claim -> `verify_claim`
 - If the question is general, use `answer_general_question`
 - If the question is specific to a paper, use `query_paper_for_answer`
-- If the question is about citations, use OpenAlex tools
+- If user asks about citations/references:
+  - "What cites X?" or "Who cited Y?" -> `get_cited_works`
+  - "What does X reference?" or "X's bibliography?" -> `get_referenced_works`
+  - "Papers related to X?" or "Similar to Y?" -> `find_related_works`
+  - "Citation for X?" or "BibTeX for Y?" -> `get_citation_details`
 - If the question is about generating research ideas, use `generate_research_ideas`
 - Always provide comprehensive answers with proper citations from the retrieved sources
 
