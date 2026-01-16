@@ -19,11 +19,22 @@ class DocumentManager:
     VECTOR_DB_DIR = "data/faiss_db"
 
     def __init__(self, model: EmbeddingModel):
+        self.model = model
         self.embeddings = get_model_instance(model)
+        
+        # Get the appropriate vector size and directory for this model
+        if model == EmbeddingModel.GEMINI_EMBEDDING_001:
+            vector_size = 3072
+            self.VECTOR_DB_DIR = "data/faiss_db_gemini"
+        elif model == EmbeddingModel.MISTRAL_EMBEDDING_5:
+            vector_size = 4096
+            self.VECTOR_DB_DIR = "data/faiss_db_mistral"
+        else:
+            raise ValueError(f"Unsupported embedding model: {model}")
 
         self.vector_store = FAISS(
             embedding_function=self.embeddings,
-            index=faiss.IndexFlatL2(3072),
+            index=faiss.IndexFlatL2(vector_size),
             docstore=InMemoryDocstore(),
             index_to_docstore_id={},
         )
@@ -104,11 +115,8 @@ class DocumentManager:
                     )
 
                 # Read PDF
-                try:
-                    loader = PyMuPDFLoader(resolved_path)
-                    docs = loader.load()
-                except Exception as e:
-                    raise Exception(f"Failed to load PDF: {str(e)}")
+                loader = PyMuPDFLoader(resolved_path)
+                docs = loader.load()
 
                 resolved_abs = os.path.abspath(resolved_path)
                 data_dir_abs = os.path.abspath(self.DATA_DIR)
@@ -124,6 +132,7 @@ class DocumentManager:
                             else normalized_input_path
                         )
                 except ValueError:
+                    print("ValueError in commonpath check")
                     effective_file_path = (
                         resolved_abs
                         if os.path.isabs(normalized_input_path)
@@ -153,7 +162,10 @@ class DocumentManager:
                 chunks = text_splitter.split_documents(docs)
 
                 # Add to vector store
-                self.vector_store.add_documents(chunks)
+                try:
+                    self.vector_store.add_documents(chunks)
+                except Exception as e:
+                    raise RuntimeError(f"Failed to add documents to vector store: {e}")
 
                 indexed_files.append(effective_file_path)
                 self._indexed_file_paths.add(effective_file_path)
@@ -165,6 +177,7 @@ class DocumentManager:
             }
 
         else:
+            print("[DocumentManager] Indexing document with title and abstract only.")
             doc = Document(
                 page_content=metadata.get("title", "")
                 + " "

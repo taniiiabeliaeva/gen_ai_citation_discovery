@@ -42,7 +42,21 @@ app.add_middleware(
 # 2. Agent Initialization
 # Compile the graph once at API startup
 SELECTED_LANGUAGE_MODEL = LanguageModel.GEMINI_2_5_FLASH
-SELECTED_EMBEDDING_MODEL = EmbeddingModel.GEMINI_EMBEDDING_001
+
+# Fixed embedding model for all documents (TU Wien Mistral)
+EMBEDDING_MODEL = EmbeddingModel.MISTRAL_EMBEDDING_5
+
+# Model presets: different language models for text generation
+MODEL_PRESETS = {
+    "tuwien": {
+        "language_model": LanguageModel.GLM_4_6,
+        "display_name": "TU Wien GLM-4.6"
+    },
+    "gemini": {
+        "language_model": LanguageModel.GEMINI_2_5_FLASH,
+        "display_name": "Google Gemini 2.5 Flash"
+    }
+}
 
 try:
     AGENT_APP = create_research_langgraph(ALL_TOOLS, SELECTED_LANGUAGE_MODEL)
@@ -50,7 +64,8 @@ except Exception as e:
     print(f"FATAL: Could not initialize LangGraph agent: {e}")
     AGENT_APP = None
 
-document_manager = DocumentManager(SELECTED_EMBEDDING_MODEL)
+# Initialize document manager with fixed TU Wien embedding model
+document_manager = DocumentManager(EMBEDDING_MODEL)
 
 # Set LLM and DocumentManager for RAG tools
 tools_set_llm(SELECTED_LANGUAGE_MODEL)
@@ -58,6 +73,7 @@ tools_set_document_manager(document_manager)
 
 CHAT_HISTORY = {}
 MAX_HISTORY_MESSAGES = 20
+CURRENT_MODEL_PRESET = "gemini"  # Default to Gemini
 
 
 def _format_sse_data(data: str) -> str:
@@ -68,6 +84,64 @@ def _format_sse_data(data: str) -> str:
 @app.get("/health")
 def health_check():
     return {"status": "ok", "agent_ready": AGENT_APP is not None}
+
+
+@app.get("/api/models")
+def get_models():
+    """Get available model presets and current selection."""
+    return JSONResponse(content={
+        "presets": {
+            key: {"display_name": preset["display_name"]}
+            for key, preset in MODEL_PRESETS.items()
+        },
+        "current": CURRENT_MODEL_PRESET
+    })
+
+
+@app.post("/api/models/switch/{preset_name}")
+def switch_model(preset_name: str):
+    """Switch to a different text generation model preset."""
+    global AGENT_APP, SELECTED_LANGUAGE_MODEL, CURRENT_MODEL_PRESET, CHAT_HISTORY
+
+    print(f"\n[API REQUEST] POST /api/models/switch/{preset_name}")
+
+    if preset_name not in MODEL_PRESETS:
+        raise HTTPException(status_code=400, detail=f"Invalid preset. Available: {list(MODEL_PRESETS.keys())}")
+
+    if preset_name == CURRENT_MODEL_PRESET:
+        print(f"[MODEL SWITCH] Already using {preset_name}")
+        return JSONResponse(content={"message": f"Already using {preset_name}", "current": CURRENT_MODEL_PRESET})
+
+    try:
+        preset = MODEL_PRESETS[preset_name]
+        new_language_model = preset["language_model"]
+
+        print(f"[MODEL SWITCH] Switching to {preset['display_name']}")
+        print(f"[MODEL SWITCH] Language Model: {new_language_model.value}")
+        print(f"[MODEL SWITCH] Embedding Model: {EMBEDDING_MODEL.value} (fixed)")
+
+        # Reinitialize agent with new language model
+        AGENT_APP = create_research_langgraph(ALL_TOOLS, new_language_model)
+
+        # Update global language model
+        SELECTED_LANGUAGE_MODEL = new_language_model
+        CURRENT_MODEL_PRESET = preset_name
+
+        # Update RAG tools with new language model (document manager stays the same)
+        tools_set_llm(new_language_model)
+
+        # Clear chat history as context may not be compatible
+        CHAT_HISTORY.clear()
+
+        print(f"[MODEL SWITCH] Successfully switched to {preset_name}")
+        return JSONResponse(content={
+            "message": f"Successfully switched to {preset['display_name']}",
+            "current": CURRENT_MODEL_PRESET
+        })
+
+    except Exception as e:
+        print(f"[MODEL SWITCH ERROR] Failed to switch models: {e}")
+        raise HTTPException(status_code=500, detail=f"Failed to switch models: {str(e)}")
 
 
 @app.post("/api/chat/{session_id}")
@@ -251,15 +325,23 @@ async def upload_document(file: UploadFile = File(...)):
         # Save the uploaded file
         with open(file_path, "wb") as buffer:
             shutil.copyfileobj(file.file, buffer)
+    except Exception as e:
+        print(f"[UPLOAD ERROR] Failed to save file: {str(e)}")
+        raise HTTPException(status_code=500, detail=str(e))
 
-        print(f"[UPLOAD] File saved successfully, starting indexing...")
+    print(f"[UPLOAD] File saved successfully, starting indexing...")
 
+    try:
         # Process and index the PDF
         relative_path = os.path.join("pdfs", file.filename)
         result = document_manager.process_and_index_pdf(
             relative_path, None
         )  # TODO add metadata
+    except Exception as e:
+        print(f"[UPLOAD ERROR] Failed to index document: {str(e)}")
+        raise HTTPException(status_code=500, detail=str(e))
 
+    try:
         if result.get("count", 0) > 0:
             document_manager.save_index()
 

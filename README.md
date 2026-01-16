@@ -283,8 +283,14 @@ npm run dev
 ### Environment Variables
 Create `.env` in backend directory:
 ```
-GOOGLE_API_KEY=your_api_key_here
+GOOGLE_API_KEY=your_google_api_key_here
+AQUEDUCT_API_KEY=your_tuwien_aqueduct_api_key_here
 ```
+
+**Note**: 
+- `GOOGLE_API_KEY` is required for Gemini text generation models
+- `AQUEDUCT_API_KEY` is required for TU Wien models (GLM-4.6 text generation + Mistral embeddings)
+- **All PDF embeddings use the TU Wien Mistral embedding model regardless of which text generation model is selected**
 
 ---
 

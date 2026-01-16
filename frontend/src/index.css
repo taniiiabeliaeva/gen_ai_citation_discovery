@@ -79,3 +79,38 @@ button:focus-visible {
     background-color: #f9f9f9;
   }
 }
+
+/* Custom utility classes for word breaking */
+.overflow-wrap {
+  overflow-wrap: break-word;
+  word-wrap: break-word;
+}
+
+/* Ensure markdown content also wraps properly */
+.markdown-content {
+  overflow-wrap: anywhere;
+  word-wrap: break-word;
+  word-break: break-word;
+}
+
+.markdown-content * {
+  overflow-wrap: anywhere;
+  word-wrap: break-word;
+  word-break: break-word;
+}
+
+/* Force wrapping for long filenames with underscores, hyphens, etc. */
+.break-all {
+  word-break: break-all;
+  overflow-wrap: anywhere;
+}
+
+/* Hide scrollbar completely */
+.scrollbar-hide {
+  -ms-overflow-style: none;  /* IE and Edge */
+  scrollbar-width: none;  /* Firefox */
+}
+
+.scrollbar-hide::-webkit-scrollbar {
+  display: none;  /* Chrome, Safari, Opera */
+}
