@@ -44,7 +44,7 @@ app.add_middleware(
 SELECTED_LANGUAGE_MODEL = LanguageModel.GEMINI_2_5_FLASH
 
 # Fixed embedding model for all documents (TU Wien Mistral)
-EMBEDDING_MODEL = EmbeddingModel.MISTRAL_EMBEDDING_5
+EMBEDDING_MODEL = EmbeddingModel.GEMINI_EMBEDDING_001
 
 # Model presets: different language models for text generation
 MODEL_PRESETS = {
