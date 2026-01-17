@@ -223,21 +223,7 @@ GIT_LFS_SKIP_SMUDGE=1 git pull
 
 Then download the FAISS data manually and place it into the corresponding directories.
 
-### 2. Backend Setup
-```bash
-cd backend
-uv sync
-uv run main.py
-```
-
-### 3. Frontend Setup
-```bash
-cd frontend
-npm install
-npm run dev
-```
-
-### 4. Environment Variables
+### 2. Environment Variables
 Create `.env` in backend directory:
 ```
 GOOGLE_API_KEY=your_google_api_key_here
@@ -247,7 +233,20 @@ AQUEDUCT_API_KEY=your_tuwien_aqueduct_api_key_here
 **Note**: 
 - `GOOGLE_API_KEY` is required for Gemini text generation models
 - `AQUEDUCT_API_KEY` is required for TU Wien models (GLM-4.6 text generation + Mistral embeddings)
-  
+
+### 3. Backend Setup
+```bash
+cd backend
+uv sync
+uv run main.py
+```
+
+### 4. Frontend Setup
+```bash
+cd frontend
+npm install
+npm run dev
+```
 ---
 
 ## Technical Requirements
