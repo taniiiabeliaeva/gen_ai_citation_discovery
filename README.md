@@ -183,11 +183,6 @@ Users can ask:
   - Link to specific papers and page numbers
   - Visual indicators for conflicting papers
 
-- **Research Gap Dashboard**:
-  - Dedicated view for identified gaps
-  - Categorize gaps by type (methodological, empirical, theoretical)
-  - Allow users to save/export gaps
-
 - **Paper Comparison View**:
   - Side-by-side comparison table
   - Highlight key differences
@@ -216,55 +211,9 @@ Users can ask:
 
 ---
 
-## Implementation Priority
-
-### High Priority (Next Sprint)
-1. `recommend_relevant_papers` tool
-2. Frontend paper flagging/sorting
-3. `identify_research_gaps` tool
-
-### Medium Priority
-4. `compare_papers` tool
-5. Frontend contradiction highlighting
-
----
-
-## Technical Requirements
-
-### New Tools to Implement
-
-Each tool should follow this pattern:
-
-```python
-@tool
-def tool_name(param1: str, param2: int = 5) -> str:
-    """
-    Clear description of what the tool does.
-    
-    Args:
-        param1: Description of parameter
-        param2: Description with default value
-    
-    Returns:
-        Description of return value
-    """
-    # Implementation
-    pass
-```
-
-### Agent System Prompt Updates
-- Add guidance for when to use each new tool
-- Update workflow instructions
-- Provide examples of tool combinations
-
-### Frontend State Management
-- Add relevance scores to document state
-- Store research gaps in session state
-- Manage contradiction highlights
-
----
-
 ## Getting Started
+
+The extracted PDF archive is larger than GitHub’s 2 GB file size limit, so it cannot be uploaded directly to this repository. Please download the full dataset from Google Drive: https://drive.google.com/drive/folders/1kbam5je_CuscAuGoF3IcZZ7sRv8FLCJu?usp=sharing and unzip it here backend/data/pdfs.
 
 ### Backend Setup
 ```bash
@@ -294,7 +243,28 @@ AQUEDUCT_API_KEY=your_tuwien_aqueduct_api_key_here
 
 ---
 
-## Contributing
+## Technical Requirements
+
+### New Tools to Implement
+
+Each tool should follow this pattern:
+
+```python
+@tool
+def tool_name(param1: str, param2: int = 5) -> str:
+    """
+    Clear description of what the tool does.
+    
+    Args:
+        param1: Description of parameter
+        param2: Description with default value
+    
+    Returns:
+        Description of return value
+    """
+    # Implementation
+    pass
+```
 
 When adding new tools:
 1. Define the tool in `backend/tools/` directory
@@ -302,3 +272,13 @@ When adding new tools:
 3. Update system prompt in `backend/core/agent.py`
 4. Add logging for debugging
 5. Test with sample queries
+
+### Agent System Prompt Updates
+- Add guidance for when to use each new tool
+- Update workflow instructions
+- Provide examples of tool combinations
+
+### Frontend State Management
+- Add relevance scores to document state
+- Store research gaps in session state
+- Manage contradiction highlights
