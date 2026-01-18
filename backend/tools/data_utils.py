@@ -11,7 +11,7 @@ POLITE_EMAIL = os.getenv("POLITE_EMAIL", "")
 
 # Global variables
 PAPER_DF: pd.DataFrame = pd.DataFrame()
-CSV_FILE_PATH = "data/works_final_full.csv"
+CSV_FILE_PATH = "data/works_final.csv"
 
 
 def load_paper_data():
