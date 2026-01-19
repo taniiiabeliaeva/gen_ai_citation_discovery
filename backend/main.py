@@ -72,7 +72,7 @@ tools_set_llm(SELECTED_LANGUAGE_MODEL)
 tools_set_document_manager(document_manager)
 
 CHAT_HISTORY = {}
-MAX_HISTORY_MESSAGES = 20
+MAX_HISTORY_MESSAGES = 5
 CURRENT_MODEL_PRESET = "gemini"  # Default to Gemini
 
 

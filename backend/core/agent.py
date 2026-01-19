@@ -51,6 +51,9 @@ IMPORTANT TOOL USAGE GUIDELINES:
    - Use the `query_paper_for_answer` tool when you know the exact paper file path
    - This tool filters results to a specific document
    - Use when the user says "In the paper titled X, what..." or "According to [paper name]..."
+   - **ENHANCED CAPABILITY**: The tool now automatically detects general questions (e.g., "What is this paper about?", "Summarize this paper") and rewrites them into multiple specific queries targeting different sections (abstract, methodology, findings, conclusions) to ensure comprehensive retrieval
+   - This means you can confidently use this tool for BOTH specific questions ("What methodology did they use?") AND general questions ("What is this paper about?")
+
 
 7. **For generating research ideas, explaining limitations, and suggesting future work**:
    - Use the `generate_research_ideas` tool to identify limitations and suggest future work

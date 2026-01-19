@@ -20,9 +20,11 @@ def tools_set_document_manager(document_manager: DocumentManager) -> None:
     global _DOCUMENT_MANAGER
     _DOCUMENT_MANAGER = document_manager
 
+
 def tools_set_llm(model: LanguageModel) -> None:
     global _LLM_INSTANCE
     _LLM_INSTANCE = get_model_instance(model)
+
 
 def _get_vector_store():
     global _DOCUMENT_MANAGER
@@ -37,21 +39,133 @@ def _canonicalize_file_path(file_path: str) -> str:
         raise ValueError("DocumentManager is not set. Please initialize it first.")
     return _DOCUMENT_MANAGER._canonicalize_file_path(file_path)
 
+
 # --- RAG Tool List ---
 ALL_RAG_TOOLS = []
 
 
+def _is_general_question(query: str) -> bool:
+    """
+    Detects if a user query about a paper is too general and needs rewriting.
+
+    Args:
+        query: The user's question
+
+    Returns:
+        True if the query is general, False otherwise
+    """
+    query_lower = query.lower().strip()
+
+    # Patterns that indicate general questions
+    general_patterns = [
+        "what is this paper about",
+        "what is the paper about",
+        "summarize this paper",
+        "summarize the paper",
+        "give me an overview",
+        "tell me about this paper",
+        "tell me about the paper",
+        "what does this paper",
+        "what does the paper",
+        "explain this paper",
+        "explain the paper",
+        "describe this paper",
+        "describe the paper",
+        "what are the main",
+        "what is the main contribution",
+        "what are the contributions",
+        "paper summary",
+        "overview of",
+    ]
+
+    return any(pattern in query_lower for pattern in general_patterns)
+
+
+def _generate_specific_queries(original_query: str, topic: str = None) -> list[str]:
+    """
+    Generates multiple specific queries targeting different sections of a paper.
+
+    Args:
+        original_query: The original user query
+        topic: Optional topic of the paper to include in queries
+
+    Returns:
+        List of specific queries to retrieve comprehensive information
+    """
+    # Base queries targeting different sections
+    specific_queries = [
+        "abstract introduction overview main contribution",
+        "methodology approach method technique algorithm",
+        "results findings experiments evaluation performance",
+        "conclusions future work limitations discussion",
+        "problem motivation research question background",
+    ]
+
+    # If topic is provided, add it as a context to the queries
+    if topic:
+        topic_context = topic.lower().strip()
+        specific_queries = [f"{topic_context} {query}" for query in specific_queries]
+
+    return specific_queries
+
+
 @tool
-def query_paper_for_answer(user_query: str, paper_file_path: str) -> str:
+def query_paper_for_answer(user_query: str, paper_file_path: str, topic: str) -> str:
     """
     Analyzes the content of a specific local paper to answer a question or provide
     a detailed summary using RAG. Returns the answer and explicitly cites the source PDF.
+
+    For general questions (e.g., "What is this paper about?"), the tool automatically
+    rewrites the query into multiple specific queries targeting different sections
+    (abstract, methodology, findings, conclusions) to ensure comprehensive retrieval.
     """
     canonical_path = _canonicalize_file_path(paper_file_path)
-    retriever = _get_vector_store().as_retriever(
-        search_kwargs={"k": 3, "filter": {"file_path": canonical_path}}
-    )
-    relevant_docs = retriever.invoke(user_query)
+
+    # Check if the query is general and needs rewriting
+    is_general = _is_general_question(user_query)
+
+    if is_general:
+        print(
+            f"[RAG TOOL] Detected general question, using multi-query retrieval strategy"
+        )
+
+        # Generate multiple specific queries, including paper title for context
+        specific_queries = _generate_specific_queries(user_query, topic=topic)
+        print(f"[RAG TOOL] Generated {len(specific_queries)} specific queries")
+
+        # Retrieve documents using each specific query
+        all_relevant_docs = []
+        seen_content = set()  # To avoid duplicate chunks
+
+        for idx, query in enumerate(specific_queries, 1):
+            retriever = _get_vector_store().as_retriever(
+                search_kwargs={"k": 3, "filter": {"file_path": canonical_path}}
+            )
+            docs = retriever.invoke(query)
+
+            # Deduplicate based on content
+            for doc in docs:
+                content_hash = hash(
+                    doc.page_content[:100]
+                )  # Use first 100 chars as hash
+                if content_hash not in seen_content:
+                    all_relevant_docs.append(doc)
+                    seen_content.add(content_hash)
+
+            print(
+                f"[RAG TOOL] Query {idx}/{len(specific_queries)}: Retrieved {len(docs)} chunks for query: '{query}'"
+            )
+
+        print(f"[RAG TOOL] Total unique chunks retrieved: {len(all_relevant_docs)}")
+        relevant_docs = all_relevant_docs
+
+    else:
+        # Use original single-query approach for specific questions
+        print(f"[RAG TOOL] Using single-query retrieval for specific question")
+        retriever = _get_vector_store().as_retriever(
+            search_kwargs={"k": 3, "filter": {"file_path": canonical_path}}
+        )
+        relevant_docs = retriever.invoke(user_query)
 
     if not relevant_docs:
         return f"Could not find relevant text chunks for the paper: {paper_file_path} (canonical: {canonical_path})."
@@ -68,13 +182,39 @@ def query_paper_for_answer(user_query: str, paper_file_path: str) -> str:
 
     # 2. Use LLM to synthesize the answer and cite the source
 
-    rag_prompt = f"""
-    You are a research analyst. Use the CONTEXT provided below to answer the USER QUESTION.
-    SYNTHESIZED ANSWER:
-    """
-    answer = _LLM_INSTANCE.invoke(
-        rag_prompt + context + f"\n\nUSER QUESTION: {user_query}"
-    ).content
+    # Adjust prompt based on whether it's a general or specific question
+    if is_general:
+        rag_prompt = f"""
+You are a research analyst. Use the CONTEXT provided below to answer the USER QUESTION.
+
+The context contains information from multiple sections of the paper. Provide a comprehensive
+answer that synthesizes information from different parts of the paper (abstract, methodology,
+findings, conclusions, etc.).
+
+CONTEXT:
+---
+{context}
+---
+
+USER QUESTION: {user_query}
+
+SYNTHESIZED ANSWER:
+"""
+    else:
+        rag_prompt = f"""
+You are a research analyst. Use the CONTEXT provided below to answer the USER QUESTION.
+
+CONTEXT:
+---
+{context}
+---
+
+USER QUESTION: {user_query}
+
+SYNTHESIZED ANSWER:
+"""
+
+    answer = _LLM_INSTANCE.invoke(rag_prompt).content
 
     # Append the sources explicitly to the final string output
     return f"{answer}\n\n--- SOURCES USED ---\n{source_list}"
@@ -262,11 +402,12 @@ def recommend_relevant_papers(topic: str, num_papers: int = 10) -> str:
     print(f"[RECOMMEND TOOL] Returning {len(papers_list)} unique papers")
     return json.dumps(result, indent=2)
 
+
 @tool
 def identify_research_gaps(topic: str, file_paths: str = None) -> str:
     """
     Analyzes multiple papers to identify unexplored areas, contradictions, and common limitations.
-    
+
     Use this tool when the user asks:
     - "What is missing in this field?"
     - "Find research gaps in these papers"
@@ -280,19 +421,23 @@ def identify_research_gaps(topic: str, file_paths: str = None) -> str:
         A structured analysis of research gaps with citations.
     """
     print(f"\n[GAP ANALYSIS TOOL] Analyzing gaps for topic: '{topic}'")
-    
+
     # finding sections discussing weaknesses
     # keywords that usually appear in "Future Work" or "Discussion" sections
-    search_query = f"{topic} limitations future work challenges open problems conclusion"
-    
+    search_query = (
+        f"{topic} limitations future work challenges open problems conclusion"
+    )
+
     relevant_docs = []
 
     # MODE 1: Specific Files Selected
     if file_paths:
         # Split the string "path1.pdf, paper2.pdf" into a clean list
-        paths_list = [p.strip() for p in file_paths.split(',') if p.strip()]
-        print(f"[GAP ANALYSIS TOOL] Restricting search to {len(paths_list)} specific files.")
-        
+        paths_list = [p.strip() for p in file_paths.split(",") if p.strip()]
+        print(
+            f"[GAP ANALYSIS TOOL] Restricting search to {len(paths_list)} specific files."
+        )
+
         for path in paths_list:
             # Canonicalize path before searching
             canonical_path = _canonicalize_file_path(path)
@@ -302,7 +447,7 @@ def identify_research_gaps(topic: str, file_paths: str = None) -> str:
             )
             docs = retriever.invoke(search_query)
             relevant_docs.extend(docs)
-            
+
     # MODE 2: General Topic Search (Fallback if no papers selected)
     else:
         print(f"[GAP ANALYSIS TOOL] Searching entire database (no files selected).")
@@ -315,13 +460,13 @@ def identify_research_gaps(topic: str, file_paths: str = None) -> str:
     # 2. Extract context and source metadata
     context_parts = []
     seen_sources = set()
-    
+
     for doc in relevant_docs:
         title = doc.metadata.get("title", "Untitled")
         content = doc.page_content
         # Create a unique key to avoid citing the exact same paper/chunk multiple times
         source_key = f"{title}-{content[:50]}"
-        
+
         if source_key not in seen_sources:
             context_parts.append(f"Source: {title}\nExcerpt: {content}")
             seen_sources.add(source_key)
@@ -350,11 +495,12 @@ def identify_research_gaps(topic: str, file_paths: str = None) -> str:
     response = _LLM_INSTANCE.invoke(gap_analysis_prompt)
     return response.content
 
+
 @tool
 def compare_papers(
     topic: str,
     file_paths: str = None,
-    aspect: str = "methodology, findings, and limitations"
+    aspect: str = "methodology, findings, and limitations",
 ) -> str:
     """
     Compares multiple academic papers with respect to a given aspect.
@@ -378,7 +524,7 @@ def compare_papers(
     selected_docs = []
 
     # Use a BROAD retriever — comparison needs coverage, not precision
-    retriever = _get_vector_store().as_retriever(search_kwargs={"k": 10})
+    retriever = _get_vector_store().as_retriever(search_kwargs={"k": 5})
 
     # Case 1: User selected specific papers
     if file_paths:
@@ -388,7 +534,9 @@ def compare_papers(
         indexed_paths = set()
         if _DOCUMENT_MANAGER is not None:
             indexed_paths = {
-                d.get("file_path", "") for d in _DOCUMENT_MANAGER.list_documents() if d.get("file_path", "")
+                d.get("file_path", "")
+                for d in _DOCUMENT_MANAGER.list_documents()
+                if d.get("file_path", "")
             }
 
         resolved_paths = []
@@ -418,7 +566,9 @@ def compare_papers(
                 search_kwargs={"k": 10, "filter": {"file_path": canonical_path}}
             )
             docs = per_paper_retriever.invoke(retrieval_query)
-            print(f"[DEBUG] Retrieved {len(docs)} chunks for {original_path} (canonical: {canonical_path})")
+            print(
+                f"[DEBUG] Retrieved {len(docs)} chunks for {original_path} (canonical: {canonical_path})"
+            )
 
             if not docs:
                 selected_docs.append(
@@ -428,10 +578,12 @@ def compare_papers(
 
             content = "\n".join([d.page_content for d in docs[:5]])
             title = docs[0].metadata.get("title") if docs else None
-            paper_label = f"{title} ({canonical_path})" if title else f"{original_path} ({canonical_path})"
-            selected_docs.append(
-                f"PAPER: {paper_label}\nCONTENT:\n{content}"
+            paper_label = (
+                f"{title} ({canonical_path})"
+                if title
+                else f"{original_path} ({canonical_path})"
             )
+            selected_docs.append(f"PAPER: {paper_label}\nCONTENT:\n{content}")
 
     # Case 2: No specific papers → compare most relevant ones
     else:
@@ -441,14 +593,14 @@ def compare_papers(
 
         grouped = {}
         for doc in docs:
-            source = doc.metadata.get("title") or doc.metadata.get("source", "Unknown Paper")
+            source = doc.metadata.get("title") or doc.metadata.get(
+                "source", "Unknown Paper"
+            )
             grouped.setdefault(source, []).append(doc.page_content)
 
         for source, contents in list(grouped.items())[:3]:
             content = "\n".join(contents[:5])
-            selected_docs.append(
-                f"PAPER: {source}\nCONTENT:\n{content}"
-            )
+            selected_docs.append(f"PAPER: {source}\nCONTENT:\n{content}")
 
     if not selected_docs:
         return "Not enough information found to compare the papers."
@@ -458,10 +610,7 @@ def compare_papers(
     # LLM: low temperature for factual comparison
     llm = _LLM_INSTANCE
     if llm is None:
-        llm = ChatGoogleGenerativeAI(
-            model="gemini-2.5-flash",
-            temperature=0.1
-        )
+        llm = ChatGoogleGenerativeAI(model="gemini-2.5-flash", temperature=0.1)
 
     comparison_prompt = f"""
 You are an academic research assistant.
@@ -501,6 +650,7 @@ OUTPUT FORMAT:
 
     response = llm.invoke(comparison_prompt)
     return response.content
+
 
 @tool
 def verify_claim(claim: str, file_paths: str = None) -> str:
@@ -566,15 +716,11 @@ def verify_claim(claim: str, file_paths: str = None) -> str:
         excerpt = doc.page_content
 
         sources.add((title, source))
-        context_blocks.append(
-            f"Paper: {title}\nSource: {source}\nExcerpt:\n{excerpt}"
-        )
+        context_blocks.append(f"Paper: {title}\nSource: {source}\nExcerpt:\n{excerpt}")
 
     context_str = "\n\n---\n\n".join(context_blocks)
 
-    source_list = "\n".join(
-        [f"- {t} ({s})" for t, s in sources]
-    )
+    source_list = "\n".join([f"- {t} ({s})" for t, s in sources])
 
     # -----------------------------
     # LLM classification prompt

@@ -7,6 +7,7 @@ import shutil
 from vectordb_utils.document_manager import DocumentManager
 from llm.model import EmbeddingModel
 
+
 def parse_args():
     parser = ArgumentParser()
     parser.add_argument("--test", action="store_true", default=False)
@@ -21,7 +22,7 @@ def parse_args():
 
 # --- CONFIGURATION ---
 CSV_FILE_PATH = "data/works_final.csv"
-VECTOR_DB_DIR = "data/faiss_db"
+VECTOR_DB_DIR = "data/faiss_db_gemini"
 
 load_dotenv()
 
@@ -34,7 +35,7 @@ def setup_environment_and_create_vector_store(test=False):
             f"CSV file not found at {CSV_FILE_PATH}. Please run setup scripts first."
         )
 
-    document_manager = DocumentManager(EmbeddingModel.MISTRAL_EMBEDDING_5)
+    document_manager = DocumentManager(EmbeddingModel.GEMINI_EMBEDDING_001)
     df = pd.read_csv(CSV_FILE_PATH)
 
     if test:

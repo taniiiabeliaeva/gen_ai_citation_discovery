@@ -21,7 +21,7 @@ class DocumentManager:
     def __init__(self, model: EmbeddingModel):
         self.model = model
         self.embeddings = get_model_instance(model)
-        
+
         # Get the appropriate vector size and directory for this model
         if model == EmbeddingModel.GEMINI_EMBEDDING_001:
             vector_size = 3072
@@ -103,7 +103,9 @@ class DocumentManager:
                 candidate_paths: List[str] = [normalized_input_path]
                 if not os.path.isabs(normalized_input_path):
                     candidate_paths.append(
-                        os.path.normpath(os.path.join(self.DATA_DIR, normalized_input_path))
+                        os.path.normpath(
+                            os.path.join(self.DATA_DIR, normalized_input_path)
+                        )
                     )
 
                 resolved_path: Optional[str] = next(
@@ -124,7 +126,9 @@ class DocumentManager:
                 effective_file_path: str
                 try:
                     if os.path.commonpath([resolved_abs, data_dir_abs]) == data_dir_abs:
-                        effective_file_path = os.path.relpath(resolved_abs, data_dir_abs)
+                        effective_file_path = os.path.relpath(
+                            resolved_abs, data_dir_abs
+                        )
                     else:
                         effective_file_path = (
                             resolved_abs
@@ -140,9 +144,11 @@ class DocumentManager:
                     )
 
                 effective_file_path = self._canonicalize_file_path(effective_file_path)
+                print(f"Effective file path: {effective_file_path}")
 
                 if effective_file_path in self._indexed_file_paths:
                     skipped_files.append(effective_file_path)
+                    print(f"Skipping already indexed file: {effective_file_path}")
                     continue
 
                 base_metadata = dict(metadata)
@@ -160,15 +166,20 @@ class DocumentManager:
                     chunk_size=1000, chunk_overlap=200
                 )
                 chunks = text_splitter.split_documents(docs)
+                print(
+                    f"Split {len(docs)} documents from {pdf_path} into {len(chunks)} chunks."
+                )
 
                 # Add to vector store
                 try:
                     self.vector_store.add_documents(chunks)
+                    print(f"Added {len(chunks)} documents to vector store.")
                 except Exception as e:
                     raise RuntimeError(f"Failed to add documents to vector store: {e}")
 
                 indexed_files.append(effective_file_path)
                 self._indexed_file_paths.add(effective_file_path)
+                self.save_index()
 
             return {
                 "indexed": indexed_files,
@@ -185,6 +196,7 @@ class DocumentManager:
                 metadata=metadata,
             )
             self.vector_store.add_documents([doc])
+            self.save_index()
             return {"indexed": [], "count": 0}
 
     def list_documents(self) -> List[Dict]:
@@ -202,7 +214,9 @@ class DocumentManager:
         # 2. Extract the list of Document objects from the docstore
         # The ._dict attribute of InMemoryDocstore is the underlying dictionary
         all_docs: List[Document] = list(docstore._dict.values())
-        all_pdf_docs = [doc for doc in all_docs if doc.metadata.get("file_path", "") != ""]
+        all_pdf_docs = [
+            doc for doc in all_docs if doc.metadata.get("file_path", "") != ""
+        ]
 
         # 3. Format the documents into a list of dictionaries
         results = dict()
@@ -217,6 +231,7 @@ class DocumentManager:
                     "file_path": file_path,
                     "total_pages": doc.metadata.get("total_pages", ""),
                     "cited_by_count": doc.metadata.get("cited_by_count", ""),
+                    "content": doc.page_content,
                 }
 
         return list(results.values())
@@ -228,10 +243,10 @@ class DocumentManager:
         """
         try:
             target = self._canonicalize_file_path(file_path)
-            
+
             # Also try with pdfs prefix for matching
             target_with_prefix = self._canonicalize_file_path(f"pdfs/{file_path}")
-            
+
             if not target:
                 return False
 
@@ -269,6 +284,7 @@ class DocumentManager:
         except Exception as e:
             print(f"Error deleting document: {e}")
             import traceback
+
             traceback.print_exc()
             return False
 
