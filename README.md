@@ -183,11 +183,6 @@ Users can ask:
   - Link to specific papers and page numbers
   - Visual indicators for conflicting papers
 
-- **Paper Comparison View**:
-  - Side-by-side comparison table
-  - Highlight key differences
-  - Export comparison as markdown/PDF
-
 #### 3.2 Export & Reporting
 - Export research gaps as markdown
 - Generate literature review summaries
@@ -213,34 +208,51 @@ Users can ask:
 
 ## Getting Started
 
-The extracted PDF archive is larger than GitHub’s 2 GB file size limit, so it cannot be uploaded directly to this repository. Please download the full dataset from Google Drive: https://drive.google.com/drive/folders/1kbam5je_CuscAuGoF3IcZZ7sRv8FLCJu?usp=sharing and unzip it here backend/data/pdfs.
+**Note:** This project uses Git Large File Storage (LFS) for FAISS index files. Please ensure Git LFS is installed before cloning or pulling the repository
 
-### Backend Setup
+### 1. Data setup
+Please download the full extracted PDF data archive from Google Drive: https://drive.google.com/drive/folders/1kbam5je_CuscAuGoF3IcZZ7sRv8FLCJu?usp=sharing and unzip it into `backend/data/pdfs`.
+
+**Important:** After cloning or pulling the repository, verify that `backend/data/faiss_db_gemini` and `backend/data/faiss_db_mistral` are not empty and contain the expected files. Git LFS budget quota limits may prevent these files from downloading correctly.
+If this happens, restore your working tree and pull the repository without downloading LFS files:
+
 ```bash
-cd backend
-uv sync
-uv run main.py
+git restore .
+GIT_LFS_SKIP_SMUDGE=1 git pull
 ```
 
-### Frontend Setup
-```bash
-cd frontend
-npm install
-npm run dev
-```
+Then download the FAISS data manually and place it into the corresponding directories.
 
-### Environment Variables
-Create `.env` in backend directory:
+### 2. Environment Variables
+Create a `.env` file in the backend directory.  
+You require both a Google Gemini API key as well as a TU Wien Aqueduct API key.
+
+As an employee at TU Wien, you can get access to TU Wien's LLMs using the SSO at https://aqueduct.ai.datalab.tuwien.ac.at/ and create a API key/token.
+
+The `.env` file should look as follows:
+
 ```
 GOOGLE_API_KEY=your_google_api_key_here
 AQUEDUCT_API_KEY=your_tuwien_aqueduct_api_key_here
 ```
 
 **Note**: 
-- `GOOGLE_API_KEY` is required for Gemini text generation models
-- `AQUEDUCT_API_KEY` is required for TU Wien models (GLM-4.6 text generation + Mistral embeddings)
-- **All PDF embeddings use the TU Wien Mistral embedding model regardless of which text generation model is selected**
+- `GOOGLE_API_KEY` is required for Gemini text generation models and embeddings
+- `AQUEDUCT_API_KEY` is required for TU Wien models (GLM-4.6 text generation)
 
+### 3. Backend Setup
+```bash
+cd backend
+uv sync
+uv run main.py
+```
+
+### 4. Frontend Setup
+```bash
+cd frontend
+npm install
+npm run dev
+```
 ---
 
 ## Technical Requirements
